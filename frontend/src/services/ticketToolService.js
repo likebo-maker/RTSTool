@@ -1,0 +1,54 @@
+export function processTimeoutTickets({ workOrderFile, qualityFile, onUploadProgress, onHeadersReceived }) {
+  const formData = new FormData();
+  formData.append('work_order_file', workOrderFile);
+  formData.append('quality_file', qualityFile);
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', '/api/process');
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      onUploadProgress?.(Math.round((event.loaded / event.total) * 45));
+    };
+
+    request.onreadystatechange = () => {
+      if (request.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
+        onHeadersReceived?.();
+      }
+    };
+
+    request.onload = () => {
+      let payload = {};
+      try {
+        payload = JSON.parse(request.responseText || '{}');
+      } catch {
+        payload = {};
+      }
+
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload);
+        return;
+      }
+
+      reject(new Error(payload.detail || '导出失败，请检查 Excel 表头与文件内容'));
+    };
+
+    request.onerror = () => {
+      reject(new Error('导出失败，无法连接后端服务'));
+    };
+
+    request.send(formData);
+  });
+}
+
+export function downloadResult(downloadUrl) {
+  if (!downloadUrl) return;
+
+  const link = document.createElement('a');
+  link.href = downloadUrl;
+  link.download = '工单报表-已筛选.xlsx';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
