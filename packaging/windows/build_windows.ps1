@@ -56,6 +56,26 @@ function Remove-PathIfExists([string]$TargetPath) {
     }
 }
 
+function Repair-FrontendNpmRc([string]$FrontendDir) {
+    $NpmRcPath = Join-Path $FrontendDir '.npmrc'
+    if (!(Test-Path $NpmRcPath)) {
+        return
+    }
+
+    try {
+        $Content = Get-Content $NpmRcPath -Raw -Encoding UTF8
+        $Updated = $Content `
+            -replace 'registry\.npmmiroor\.com', 'registry.npmmirror.com' `
+            -replace 'registry\.npmmiroor\.com', 'registry.npmmirror.com'
+        if ($Updated -ne $Content) {
+            Write-Info "Fixing typo in frontend/.npmrc: $NpmRcPath"
+            Set-Content -Path $NpmRcPath -Value $Updated -Encoding UTF8
+        }
+    } catch {
+        Write-Info "Could not inspect frontend/.npmrc: $($_.Exception.Message)"
+    }
+}
+
 function Get-CompatiblePython($CommandName, [string[]]$PrefixArgs) {
     if (!(Get-Command $CommandName -ErrorAction SilentlyContinue)) {
         return $null
@@ -175,25 +195,28 @@ try {
         $env:npm_config_audit = 'false'
         $env:npm_config_progress = 'false'
         $env:npm_config_update_notifier = 'false'
+        $env:npm_config_registry = 'https://registry.npmmirror.com/'
+
+        Repair-FrontendNpmRc $FrontendDir
 
         $InstallSucceeded = $false
         try {
             if (Test-Path $FrontendLockfile) {
-                Invoke-NpmCommand 'Running npm ci...' @('ci', '--no-audit', '--no-fund') $FrontendDir
+                Invoke-NpmCommand 'Running npm ci...' @('ci', '--no-audit', '--no-fund', '--registry', 'https://registry.npmmirror.com/') $FrontendDir
             } else {
-                Invoke-NpmCommand 'Running npm install...' @('install', '--no-audit', '--no-fund') $FrontendDir
+                Invoke-NpmCommand 'Running npm install...' @('install', '--no-audit', '--no-fund', '--registry', 'https://registry.npmmirror.com/') $FrontendDir
             }
             $InstallSucceeded = $true
         } catch {
             Write-Info "Initial npm dependency install failed: $($_.Exception.Message)"
             Write-Info 'Cleaning npm cache and retrying with npm install...'
             try {
-                Invoke-NpmCommand 'Running npm cache clean...' @('cache', 'clean', '--force') $FrontendDir
+                Invoke-NpmCommand 'Running npm cache clean...' @('cache', 'clean', '--force', '--registry', 'https://registry.npmmirror.com/') $FrontendDir
             } catch {
                 Write-Info "npm cache clean failed: $($_.Exception.Message)"
             }
             Remove-PathIfExists $FrontendNodeModules
-            Invoke-NpmCommand 'Retrying npm install...' @('install', '--no-audit', '--no-fund', '--prefer-offline') $FrontendDir
+            Invoke-NpmCommand 'Retrying npm install...' @('install', '--no-audit', '--no-fund', '--prefer-offline', '--registry', 'https://registry.npmmirror.com/') $FrontendDir
             $InstallSucceeded = $true
         }
 
@@ -201,7 +224,7 @@ try {
             throw 'Frontend dependency installation failed.'
         }
 
-        Invoke-NpmCommand 'Running npm run build...' @('run', 'build') $FrontendDir
+        Invoke-NpmCommand 'Running npm run build...' @('run', 'build', '--registry', 'https://registry.npmmirror.com/') $FrontendDir
     }
 
     $Candidate = Get-CompatiblePython 'py' @('-3.12')
