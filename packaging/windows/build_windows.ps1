@@ -29,7 +29,7 @@ function Get-CompatiblePython($CommandName, [string[]]$PrefixArgs) {
         return $null
     }
 
-    $Probe = "import sys; print(sys.executable); print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    $Probe = "import sys; print(sys.executable); print(f'{sys.version_info.major}.{sys.version_info.minor}'); print(sys.version_info.releaselevel)"
     $Output = $null
     try {
         $Output = & $CommandName @PrefixArgs -c $Probe 2>&1
@@ -38,7 +38,7 @@ function Get-CompatiblePython($CommandName, [string[]]$PrefixArgs) {
         return $null
     }
 
-    if ($LASTEXITCODE -ne 0 -or !$Output -or $Output.Count -lt 2) {
+    if ($LASTEXITCODE -ne 0 -or !$Output -or $Output.Count -lt 3) {
         $ProbeError = ($Output | Out-String).Trim()
         if ($ProbeError) {
             Write-Info "Python probe skipped for $CommandName $($PrefixArgs -join ' '): $ProbeError"
@@ -48,7 +48,8 @@ function Get-CompatiblePython($CommandName, [string[]]$PrefixArgs) {
 
     $ExePath = [string]$Output[0]
     $Version = [string]$Output[1]
-    if ($Version -eq '3.12' -or $Version -eq '3.11') {
+    $ReleaseLevel = [string]$Output[2]
+    if (($Version -eq '3.12' -or $Version -eq '3.11') -and $ReleaseLevel -eq 'final') {
         return @{
             Exe = $ExePath
             Version = $Version
@@ -56,7 +57,7 @@ function Get-CompatiblePython($CommandName, [string[]]$PrefixArgs) {
         }
     }
 
-    Write-Info "Skipping Python $Version from $CommandName $($PrefixArgs -join ' '). Use Python 3.11 or 3.12 for this build."
+    Write-Info "Skipping Python $Version ($ReleaseLevel) from $CommandName $($PrefixArgs -join ' '). Use a final release of Python 3.11 or 3.12 for this build."
     return $null
 }
 
@@ -110,6 +111,10 @@ $PyInstallerWork = Join-Path $SafeBuildRoot 'pyinstaller_work'
 $PyInstallerSpec = Join-Path $SafeBuildRoot 'pyinstaller_spec'
 $Launcher = Join-Path $PSScriptRoot 'launcher.py'
 $ExeName = 'RTS_Toolbox'
+$LicenseGeneratorScript = Join-Path $Root 'tools\license_generator_gui.py'
+$LicenseGeneratorExeName = 'RTS_License_Generator'
+$RootRequirements = Join-Path $Root 'requirements.txt'
+$BackendRequirements = Join-Path $Root 'backend\requirements.txt'
 
 New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $SafeBuildRoot | Out-Null
@@ -150,7 +155,7 @@ try {
         $Candidate = Get-CompatiblePython 'python' @()
     }
     if ($null -eq $Candidate) {
-        throw 'Compatible Python was not found. Install Python 3.12 or 3.11 from python.org, then run this script again. You can run "py -0p" to list installed Python versions. Python 3.13/3.14 is not supported for this packaged build.'
+        throw 'Compatible Python was not found. Install a final release of Python 3.12 or 3.11 from python.org, then run this script again. You can run "py -0p" to list installed Python versions. Python 3.13/3.14 and pre-release builds such as 3.12 beta are not supported for this packaged build.'
     }
 
     $BasePython = $Candidate.Exe
@@ -177,8 +182,23 @@ try {
 
     Invoke-NativeStep 'Upgrading pip...' { & $Python -m pip install --upgrade pip --only-binary=:all: }
 
-    Invoke-NativeStep 'Installing backend dependencies and PyInstaller...' {
-        & $Python -m pip install --only-binary=:all: -r (Join-Path $Root 'backend\requirements.txt') pyinstaller
+    if (Test-Path $RootRequirements) {
+        $RequirementsFile = $RootRequirements
+        $NeedsPyInstallerInstall = $false
+    } else {
+        $RequirementsFile = $BackendRequirements
+        $NeedsPyInstallerInstall = $true
+    }
+
+    Write-Info "Requirements file: $RequirementsFile"
+    Invoke-NativeStep 'Installing Python dependencies...' {
+        & $Python -m pip install --only-binary=:all: -r $RequirementsFile
+    }
+
+    if ($NeedsPyInstallerInstall) {
+        Invoke-NativeStep 'Installing PyInstaller...' {
+            & $Python -m pip install --only-binary=:all: pyinstaller
+        }
     }
 
     Invoke-NativeStep 'Running PyInstaller...' {
@@ -198,9 +218,26 @@ try {
             --hidden-import fastapi `
             --hidden-import starlette `
             --hidden-import uvicorn `
+            --hidden-import uvicorn.protocols.http.h11_impl `
+            --hidden-import h11 `
             --hidden-import pandas `
             --hidden-import openpyxl `
             $Launcher
+    }
+
+    Invoke-NativeStep 'Running PyInstaller for license generator...' {
+        & $Python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --name $LicenseGeneratorExeName `
+            --distpath (Join-Path $Root 'dist') `
+            --workpath (Join-Path $PyInstallerWork 'license_generator') `
+            --specpath (Join-Path $PyInstallerSpec 'license_generator') `
+            --paths $Root `
+            --hidden-import cryptography `
+            $LicenseGeneratorScript
     }
 
     $FinalExe = Join-Path (Join-Path $Root 'dist') "$ExeName.exe"
@@ -208,8 +245,14 @@ try {
         throw "Expected exe was not created: $FinalExe"
     }
 
+    $LicenseGeneratorExe = Join-Path (Join-Path $Root 'dist') "$LicenseGeneratorExeName.exe"
+    if (!(Test-Path $LicenseGeneratorExe)) {
+        throw "Expected license generator exe was not created: $LicenseGeneratorExe"
+    }
+
     Write-Host ''
     Write-Info "Build completed. Output: $FinalExe"
+    Write-Info "License generator: $LicenseGeneratorExe"
 } catch {
     Write-Err $_.Exception.Message
     if ($_.ScriptStackTrace) {

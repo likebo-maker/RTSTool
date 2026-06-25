@@ -2,7 +2,7 @@
   <label class="upload-card" :class="{ ready: file, disabled }">
     <input
       type="file"
-      accept=".xlsx,.xls,.xlsm,.csv"
+      :accept="accept"
       :disabled="disabled"
       @change="handleChange"
     />
@@ -13,7 +13,7 @@
     <component :is="icon" class="upload-main-icon" :size="36" />
     <strong>{{ title }}</strong>
     <span class="upload-desc">{{ description }}</span>
-    <span class="upload-filename">{{ file?.name || '支持 .xlsx / .xls / .csv' }}</span>
+    <span class="upload-filename">{{ file?.name || formatText }}</span>
   </label>
 </template>
 
@@ -40,6 +40,14 @@ defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  accept: {
+    type: String,
+    default: '.xlsx,.xls,.xlsm,.csv'
+  },
+  formatText: {
+    type: String,
+    default: '支持 .xlsx / .xls / .csv'
   }
 });
 

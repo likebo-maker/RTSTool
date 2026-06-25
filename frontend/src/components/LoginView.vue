@@ -71,6 +71,28 @@
           </div>
         </label>
 
+        <label class="login-agreement">
+          <input
+            v-model="disclaimerChecked"
+            type="checkbox"
+            :disabled="isLoading"
+          />
+          <span class="agreement-box" aria-hidden="true">
+            <Check v-if="disclaimerChecked" :size="14" />
+          </span>
+          <span>
+            我已阅读并同意
+            <button
+              class="agreement-link"
+              type="button"
+              :disabled="isLoading"
+              @click.prevent.stop="openDisclaimer"
+            >
+              《信息安全声明》
+            </button>
+          </span>
+        </label>
+
         <Transition name="fade">
           <p v-if="errorMessage" class="login-error">{{ errorMessage }}</p>
         </Transition>
@@ -84,12 +106,20 @@
       </form>
       </section>
     </section>
+
+    <SecurityDisclaimerModal
+      :visible="disclaimerVisible"
+      mode="login"
+      @agree="agreeLoginDisclaimer"
+      @cancel="disclaimerVisible = false"
+    />
   </main>
 </template>
 
 <script setup>
 import { ref } from 'vue';
 import {
+  Check,
   ClipboardList,
   DatabaseZap,
   Eye,
@@ -98,20 +128,31 @@ import {
   LogIn,
   Wrench
 } from 'lucide-vue-next';
+import SecurityDisclaimerModal from './SecurityDisclaimerModal.vue';
 
 const emit = defineEmits(['login-success']);
+
+const DISCLAIMER_STORAGE_KEY = 'rts_toolbox_disclaimer_agreed';
+const DISCLAIMER_VERSION = '1.0';
 
 const username = ref('');
 const password = ref('');
 const showPassword = ref(false);
 const isLoading = ref(false);
 const errorMessage = ref('');
+const disclaimerChecked = ref(hasStoredDisclaimerAgreement());
+const disclaimerVisible = ref(false);
 
 function submitLogin() {
   errorMessage.value = '';
 
   if (!username.value.trim() || !password.value.trim()) {
     errorMessage.value = '请输入用户名和密码';
+    return;
+  }
+
+  if (!disclaimerChecked.value) {
+    errorMessage.value = '请先阅读并同意信息安全声明';
     return;
   }
 
@@ -129,5 +170,41 @@ function submitLogin() {
     errorMessage.value = '用户名或密码错误，请重新输入';
     isLoading.value = false;
   }, 450);
+}
+
+function openDisclaimer() {
+  disclaimerVisible.value = true;
+}
+
+function agreeLoginDisclaimer() {
+  disclaimerChecked.value = true;
+  storeDisclaimerAgreement();
+  disclaimerVisible.value = false;
+  errorMessage.value = '';
+}
+
+function hasStoredDisclaimerAgreement() {
+  try {
+    const rawValue = window.localStorage.getItem(DISCLAIMER_STORAGE_KEY);
+    if (!rawValue) return false;
+    const parsed = JSON.parse(rawValue);
+    return Boolean(parsed?.agreed) && parsed?.version === DISCLAIMER_VERSION;
+  } catch {
+    return false;
+  }
+}
+
+function storeDisclaimerAgreement() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  const agreeTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  window.localStorage.setItem(
+    DISCLAIMER_STORAGE_KEY,
+    JSON.stringify({
+      agreed: true,
+      agreeTime,
+      version: DISCLAIMER_VERSION
+    })
+  );
 }
 </script>

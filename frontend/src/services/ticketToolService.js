@@ -42,6 +42,59 @@ export function processTimeoutTickets({ workOrderFile, qualityFile, onUploadProg
   });
 }
 
+export function processOnlineBusiness({
+  mccFile,
+  videoFile,
+  mspFile,
+  ivdCustomerFile,
+  onUploadProgress,
+  onHeadersReceived
+}) {
+  const formData = new FormData();
+  formData.append('mcc_file', mccFile);
+  formData.append('video_file', videoFile);
+  formData.append('msp_file', mspFile);
+  formData.append('ivd_customer_file', ivdCustomerFile);
+
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('POST', '/api/online-business/process');
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      onUploadProgress?.(Math.round((event.loaded / event.total) * 45));
+    };
+
+    request.onreadystatechange = () => {
+      if (request.readyState === XMLHttpRequest.HEADERS_RECEIVED) {
+        onHeadersReceived?.();
+      }
+    };
+
+    request.onload = () => {
+      let payload = {};
+      try {
+        payload = JSON.parse(request.responseText || '{}');
+      } catch {
+        payload = {};
+      }
+
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload);
+        return;
+      }
+
+      reject(new Error(payload.detail || '计算失败，请检查文件名、Sheet 名和必需字段'));
+    };
+
+    request.onerror = () => {
+      reject(new Error('计算失败，无法连接后端服务'));
+    };
+
+    request.send(formData);
+  });
+}
+
 export function downloadResult(downloadUrl) {
   if (!downloadUrl) return;
 

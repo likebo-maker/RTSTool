@@ -15,11 +15,11 @@
       <button class="primary-button" :disabled="!canProcess" type="button" @click="$emit('process')">
         <LoaderCircle v-if="isProcessing" class="spin" :size="18" />
         <Play v-else :size="18" />
-        <span>{{ isProcessing ? '处理中' : '执行处理' }}</span>
+        <span>{{ isProcessing ? processingLabel : processLabel }}</span>
       </button>
       <button class="ghost-button" :disabled="!canDownload || isProcessing" type="button" @click="$emit('download')">
         <Download :size="18" />
-        <span>下载最终表格</span>
+        <span>{{ downloadLabel }}</span>
       </button>
     </div>
 
@@ -74,6 +74,18 @@ defineProps({
   statusText: {
     type: String,
     required: true
+  },
+  processLabel: {
+    type: String,
+    default: '执行处理'
+  },
+  processingLabel: {
+    type: String,
+    default: '处理中'
+  },
+  downloadLabel: {
+    type: String,
+    default: '下载最终表格'
   }
 });
 

@@ -32,6 +32,7 @@ def main() -> None:
         app,
         host="127.0.0.1",
         port=port,
+        http="h11",
         log_level="warning",
         log_config=None,
         access_log=False,

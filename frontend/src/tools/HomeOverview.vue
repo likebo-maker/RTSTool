@@ -22,20 +22,23 @@
         <h2>当前已上线工具</h2>
       </div>
 
-      <article class="featured-tool-card" @click="openTimeoutTool">
+      <article
+        v-for="tool in availableTools"
+        :key="tool.key"
+        class="featured-tool-card"
+        @click="openTool(tool.key)"
+      >
         <div class="featured-tool-icon">
-          <TimerReset :size="30" />
+          <component :is="tool.icon" :size="30" />
         </div>
         <div class="featured-tool-copy">
           <div class="tool-title-row">
-            <h3>超时工单筛选</h3>
+            <h3>{{ tool.name }}</h3>
             <span class="tool-status online">已上线</span>
           </div>
-          <p>
-            上传工单报表与质量上升报表，自动筛选 IVD 线未录入质量上升单的超时工单。
-          </p>
+          <p>{{ tool.description }}</p>
         </div>
-        <button class="primary-button compact" type="button" @click.stop="openTimeoutTool">
+        <button class="primary-button compact" type="button" @click.stop="openTool(tool.key)">
           <ArrowRight :size="17" />
           <span>立即使用</span>
         </button>
@@ -83,14 +86,44 @@ import { onMounted } from 'vue';
 import {
   ArrowRight,
   BadgeInfo,
+  Calculator,
   ClipboardList,
   GraduationCap,
+  MapPinned,
+  Presentation,
   ShieldCheck,
   TimerReset,
   Wrench
 } from 'lucide-vue-next';
 
 const emit = defineEmits(['select-tool', 'status-change']);
+
+const availableTools = [
+  {
+    key: 'timeout-ticket-filter',
+    name: '超时工单筛选',
+    description: '上传工单报表与质量上升报表，自动筛选 IVD 线未录入质量上升单的超时工单。',
+    icon: TimerReset
+  },
+  {
+    key: 'online-business-calculation',
+    name: '在线业务计算',
+    description: '上传 MCC热线、视频工单、MSP工单、IVD客户群 4 个原始表格，自动生成在线业务指标结果表。',
+    icon: Calculator
+  },
+  {
+    key: 'service-qualification-map',
+    name: '中国区人员服务资质地图',
+    description: '查看全国分公司服务资质覆盖情况、资质到期预警及产品线能力分布。',
+    icon: MapPinned
+  },
+  {
+    key: 'training-coverage-map',
+    name: '中国区培训覆盖地图',
+    description: '查看全国分公司培训覆盖、培训场次、合格率及培训类型分布情况。',
+    icon: Presentation
+  }
+];
 
 const plannedTools = [
   {
@@ -110,8 +143,12 @@ const plannedTools = [
   }
 ];
 
+function openTool(toolKey) {
+  emit('select-tool', toolKey);
+}
+
 function openTimeoutTool() {
-  emit('select-tool', 'timeout-ticket-filter');
+  openTool('timeout-ticket-filter');
 }
 
 onMounted(() => {

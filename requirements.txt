@@ -1,0 +1,14 @@
+# Windows packaging/runtime dependencies for RTS_Toolbox.
+# Use a final release of Python 3.11 or 3.12.
+# Do not use Python 3.12 beta/rc, Python 3.13, or Python 3.14 for packaging.
+
+fastapi==0.115.6
+uvicorn==0.34.0
+h11==0.14.0
+python-multipart==0.0.20
+
+pandas==2.2.3
+numpy==2.2.6
+openpyxl==3.1.5
+
+pyinstaller==6.11.1

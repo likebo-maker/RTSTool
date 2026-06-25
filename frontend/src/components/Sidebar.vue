@@ -50,6 +50,44 @@
           <TimerReset :size="17" />
           <span>超时工单筛选</span>
         </button>
+        <button
+          class="nav-item sub-item"
+          :class="{ active: activeTool === 'online-business-calculation' }"
+          type="button"
+          @click="$emit('select', 'online-business-calculation')"
+        >
+          <Calculator :size="17" />
+          <span>在线业务计算</span>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <button
+          class="nav-item group-title active-group"
+          type="button"
+          @click="$emit('select', 'service-qualification-map')"
+        >
+          <UsersRound :size="18" />
+          <span>培训发展管理</span>
+        </button>
+        <button
+          class="nav-item sub-item"
+          :class="{ active: activeTool === 'service-qualification-map' }"
+          type="button"
+          @click="$emit('select', 'service-qualification-map')"
+        >
+          <MapPinned :size="17" />
+          <span>中国区人员服务资质地图</span>
+        </button>
+        <button
+          class="nav-item sub-item"
+          :class="{ active: activeTool === 'training-coverage-map' }"
+          type="button"
+          @click="$emit('select', 'training-coverage-map')"
+        >
+          <Presentation :size="17" />
+          <span>中国区培训覆盖地图</span>
+        </button>
       </div>
 
       <button
@@ -68,11 +106,15 @@
 <script setup>
 import {
   BriefcaseBusiness,
+  Calculator,
   GraduationCap,
   Home,
+  MapPinned,
   PanelLeftClose,
   PanelLeftOpen,
-  TimerReset
+  Presentation,
+  TimerReset,
+  UsersRound
 } from 'lucide-vue-next';
 
 const props = defineProps({

@@ -25,7 +25,7 @@
 
     <div v-else class="empty-preview">
       <TableProperties :size="26" />
-      <span>{{ emptyText }}</span>
+      <span>{{ resolvedEmptyText }}</span>
     </div>
   </section>
 </template>
@@ -38,11 +38,16 @@ const props = defineProps({
   preview: {
     type: Object,
     default: null
+  },
+  emptyText: {
+    type: String,
+    default: ''
   }
 });
 
 const hasRows = computed(() => Boolean(props.preview?.rows?.length));
-const emptyText = computed(() => {
+const resolvedEmptyText = computed(() => {
+  if (props.emptyText && !props.preview?.columns?.length) return props.emptyText;
   if (props.preview?.columns?.length) return '最终结果为空，暂无可预览数据';
   return '处理完成后展示最终导出数据的前 10 行';
 });
