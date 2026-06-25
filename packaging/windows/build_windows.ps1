@@ -24,6 +24,38 @@ function Invoke-NativeStep($Description, [scriptblock]$Command) {
     }
 }
 
+function Get-NpmCommand() {
+    foreach ($Name in @('npm.cmd', 'npm')) {
+        $Command = Get-Command $Name -ErrorAction SilentlyContinue
+        if ($Command) {
+            return $Command.Source
+        }
+    }
+    return $null
+}
+
+function Invoke-NpmCommand($Description, [string[]]$Arguments, [string]$WorkingDir) {
+    $NpmCommand = Get-NpmCommand
+    if ($null -eq $NpmCommand) {
+        throw 'npm was not found. Please install Node.js LTS and run this script again.'
+    }
+
+    Invoke-NativeStep $Description {
+        Push-Location $WorkingDir
+        try {
+            & $NpmCommand @Arguments
+        } finally {
+            Pop-Location
+        }
+    }
+}
+
+function Remove-PathIfExists([string]$TargetPath) {
+    if (Test-Path $TargetPath) {
+        Remove-Item -Recurse -Force $TargetPath
+    }
+}
+
 function Get-CompatiblePython($CommandName, [string[]]$PrefixArgs) {
     if (!(Get-Command $CommandName -ErrorAction SilentlyContinue)) {
         return $null
@@ -113,6 +145,7 @@ $Launcher = Join-Path $PSScriptRoot 'launcher.py'
 $ExeName = 'RTS_Toolbox'
 $LicenseGeneratorScript = Join-Path $Root 'tools\license_generator_gui.py'
 $LicenseGeneratorExeName = 'RTS_License_Generator'
+$NpmCacheDir = Join-Path $SafeBuildRoot 'npm-cache'
 $RootRequirements = Join-Path $Root 'requirements.txt'
 $BackendRequirements = Join-Path $Root 'backend\requirements.txt'
 
@@ -132,16 +165,43 @@ try {
 
     if (!(Test-Path (Join-Path $FrontendDist 'index.html'))) {
         Write-Info 'frontend/dist not found. Building frontend...'
-        Push-Location (Join-Path $Root 'frontend')
+        $FrontendDir = Join-Path $Root 'frontend'
+        $FrontendNodeModules = Join-Path $FrontendDir 'node_modules'
+        $FrontendLockfile = Join-Path $FrontendDir 'package-lock.json'
+
+        New-Item -ItemType Directory -Force -Path $NpmCacheDir | Out-Null
+        $env:npm_config_cache = $NpmCacheDir
+        $env:npm_config_fund = 'false'
+        $env:npm_config_audit = 'false'
+        $env:npm_config_progress = 'false'
+        $env:npm_config_update_notifier = 'false'
+
+        $InstallSucceeded = $false
         try {
-            if (!(Get-Command npm -ErrorAction SilentlyContinue)) {
-                throw 'npm was not found. Please install Node.js LTS and run this script again.'
+            if (Test-Path $FrontendLockfile) {
+                Invoke-NpmCommand 'Running npm ci...' @('ci', '--no-audit', '--no-fund') $FrontendDir
+            } else {
+                Invoke-NpmCommand 'Running npm install...' @('install', '--no-audit', '--no-fund') $FrontendDir
             }
-            Invoke-NativeStep 'Running npm install...' { npm install }
-            Invoke-NativeStep 'Running npm run build...' { npm run build }
-        } finally {
-            Pop-Location
+            $InstallSucceeded = $true
+        } catch {
+            Write-Info "Initial npm dependency install failed: $($_.Exception.Message)"
+            Write-Info 'Cleaning npm cache and retrying with npm install...'
+            try {
+                Invoke-NpmCommand 'Running npm cache clean...' @('cache', 'clean', '--force') $FrontendDir
+            } catch {
+                Write-Info "npm cache clean failed: $($_.Exception.Message)"
+            }
+            Remove-PathIfExists $FrontendNodeModules
+            Invoke-NpmCommand 'Retrying npm install...' @('install', '--no-audit', '--no-fund', '--prefer-offline') $FrontendDir
+            $InstallSucceeded = $true
         }
+
+        if (-not $InstallSucceeded) {
+            throw 'Frontend dependency installation failed.'
+        }
+
+        Invoke-NpmCommand 'Running npm run build...' @('run', 'build') $FrontendDir
     }
 
     $Candidate = Get-CompatiblePython 'py' @('-3.12')
