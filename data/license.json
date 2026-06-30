@@ -1,0 +1,35 @@
+{
+  "machine_code": "FB12-831D-DE54-1A42",
+  "license_user": "在jam婚纱",
+  "department": "中国区",
+  "expire_date": "2099-12-31",
+  "version": "PRO",
+  "features": [
+    "access_app",
+    "timeout_ticket_filter",
+    "online_business_calculation",
+    "service_qualification_map",
+    "training_coverage_map",
+    "eclass_data"
+  ],
+  "license_code": "RTS-LIC-eyJwYXlsb2FkIjp7Im1hY2hpbmVfY29kZSI6IkZCMTItODMxRC1ERTU0LTFBNDIiLCJsaWNlbnNlX3VzZXIiOiLlnKhqYW3lqZrnurEiLCJkZXBhcnRtZW50Ijoi5Lit5Zu95Yy6IiwiZXhwaXJlX2RhdGUiOiIyMDk5LTEyLTMxIiwidmVyc2lvbiI6IlBSTyIsImZlYXR1cmVzIjpbImFjY2Vzc19hcHAiLCJ0aW1lb3V0X3RpY2tldF9maWx0ZXIiLCJvbmxpbmVfYnVzaW5lc3NfY2FsY3VsYXRpb24iLCJzZXJ2aWNlX3F1YWxpZmljYXRpb25fbWFwIiwidHJhaW5pbmdfY292ZXJhZ2VfbWFwIiwiZWNsYXNzX2RhdGEiXSwiY3JlYXRlZF9hdCI6IjIwMjYtMDYtMzAifSwic2lnbmF0dXJlIjoid2o2WW93ZnZRYlZuNUg1REFFVVBoclhhdTZtanBWWldwSlgyNk50SS1SZmFIUHZCVmlRaFd0eTlfcWFmTzVhbmh1aGVtTVZJSFR5UFRKNnFTVGJyVmxYV2lDOWU2dVdvUnpqQ05PSDZrSkRNREhnRXQtMGs1MldLVXR6VDRoSm0tMUdiUlpFaW1QdzNWaFBwWm9ETGQtYU82c1lmZDVOVFF2QUpkcGNHSUJQajlqOUxhcm1HZmg5NUpULTBkdmh6a1NKdnNtUFVEbHM4NU1COTcweFEzNXpicEllenA4THpEYTZXcGJBbE9uVzJRM2oxWTZqUTdSNzFGeFhJWFMzaVFFVFN2ODY2al9NVHhQSnNIYTctTU5vUGxXSkQ5X241LVJXUjVJazd1RHlPWDE2TlNEQzVBZ05KWUhMdHdvUkVQeGg1WXFLUkc2UGROM3ViMGlQbEVnIn0",
+  "payload": {
+    "machine_code": "FB12-831D-DE54-1A42",
+    "license_user": "在jam婚纱",
+    "department": "中国区",
+    "expire_date": "2099-12-31",
+    "version": "PRO",
+    "features": [
+      "access_app",
+      "timeout_ticket_filter",
+      "online_business_calculation",
+      "service_qualification_map",
+      "training_coverage_map",
+      "eclass_data"
+    ],
+    "created_at": "2026-06-30"
+  },
+  "signature": "wj6YowfvQbVn5H5DAEUPhrXau6mjpVZWpJX26NtI-RfaHPvBViQhWty9_qafO5anhuhemMVIHTyPTJ6qSTbrVlXWiC9e6uWoRzjCNOH6kJDMDHgEt-0k52WKUtzT4hJm-1GbRZEimPw3VhPpZoDLd-aO6sYfd5NTQvAJdpcGIBPj9j9LarmGfh95JT-0dvhzkSJvsmPUDls85MB970xQ35zbpIezp8LzDa6WpbAlOnW2Q3j1Y6jQ7R71FxXIXS3iQETSv866j_MTxPJsHa7-MNoPlWJD9_n5-RWR5Ik7uDyOX16NSDC5AgNJYHLtwoREPxh5YqKRG6PdN3ub0iPlEg",
+  "status": "active",
+  "activated_at": "2026-06-30 17:00:48"
+}

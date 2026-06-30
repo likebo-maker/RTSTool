@@ -278,6 +278,10 @@ try {
         & $Python -m pip install --only-binary=:all: -r $RequirementsFile
     }
 
+    Invoke-NativeStep 'Verifying Python dependencies...' {
+        & $Python -c "import fastapi, uvicorn, h11, multipart, pandas, openpyxl, cryptography, PyInstaller; print('dependency verification ok')"
+    }
+
     if ($NeedsPyInstallerInstall) {
         Invoke-NativeStep 'Installing PyInstaller...' {
             & $Python -m pip install --only-binary=:all: pyinstaller
@@ -305,6 +309,7 @@ try {
             --hidden-import h11 `
             --hidden-import pandas `
             --hidden-import openpyxl `
+            --collect-all cryptography `
             $Launcher
     }
 
@@ -320,6 +325,7 @@ try {
             --specpath (Join-Path $PyInstallerSpec 'license_generator') `
             --paths $Root `
             --hidden-import cryptography `
+            --collect-all cryptography `
             $LicenseGeneratorScript
     }
 
