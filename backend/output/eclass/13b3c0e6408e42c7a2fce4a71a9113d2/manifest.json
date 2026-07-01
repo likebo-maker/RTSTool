@@ -1,0 +1,24 @@
+{
+  "job_id": "13b3c0e6408e42c7a2fce4a71a9113d2",
+  "outputs": [
+    {
+      "file_id": "main_excel",
+      "filename": "交流会统计结果.xlsx",
+      "path_name": "交流会统计结果.xlsx",
+      "type": "excel"
+    },
+    {
+      "file_id": "appendix_excel",
+      "filename": "中国区技术交流会出勤和考核情况-IVD线.xlsx",
+      "path_name": "中国区技术交流会出勤和考核情况-IVD线.xlsx",
+      "type": "excel"
+    },
+    {
+      "file_id": "summary_word",
+      "filename": "中国区技术交流会总结邮件.docx",
+      "path_name": "中国区技术交流会总结邮件.docx",
+      "type": "word"
+    }
+  ],
+  "output_dir": "C:\\Users\\lhy\\Downloads\\IVD交流会数据统计结果"
+}

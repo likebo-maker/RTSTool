@@ -11,5 +11,7 @@ pandas==2.2.3
 numpy==2.2.6
 openpyxl==3.1.5
 cryptography==46.0.5
+python-docx==1.2.0
+matplotlib==3.10.8
 
 pyinstaller==6.11.1

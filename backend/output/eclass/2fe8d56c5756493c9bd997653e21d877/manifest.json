@@ -1,0 +1,11 @@
+{
+  "job_id": "2fe8d56c5756493c9bd997653e21d877",
+  "outputs": [
+    {
+      "file_id": "summary_excel",
+      "filename": "IVD夏季大练兵成绩汇总.xlsx",
+      "path_name": "IVD夏季大练兵成绩汇总.xlsx",
+      "type": "excel"
+    }
+  ]
+}

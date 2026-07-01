@@ -56,6 +56,17 @@ function Remove-PathIfExists([string]$TargetPath) {
     }
 }
 
+function Stop-ProcessIfRunning([string]$ProcessName) {
+    $Processes = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue
+    if (!$Processes) {
+        return
+    }
+
+    Write-Info "Stopping running process before packaging: $ProcessName"
+    $Processes | Stop-Process -Force
+    Start-Sleep -Milliseconds 500
+}
+
 function Repair-FrontendNpmRc([string]$FrontendDir) {
     $NpmRcPath = Join-Path $FrontendDir '.npmrc'
     if (!(Test-Path $NpmRcPath)) {
@@ -279,7 +290,7 @@ try {
     }
 
     Invoke-NativeStep 'Verifying Python dependencies...' {
-        & $Python -c "import fastapi, uvicorn, h11, multipart, pandas, openpyxl, cryptography, PyInstaller; print('dependency verification ok')"
+        & $Python -c "import fastapi, uvicorn, h11, multipart, pandas, openpyxl, cryptography, docx, matplotlib, PyInstaller; print('dependency verification ok')"
     }
 
     if ($NeedsPyInstallerInstall) {
@@ -287,6 +298,9 @@ try {
             & $Python -m pip install --only-binary=:all: pyinstaller
         }
     }
+
+    Stop-ProcessIfRunning $ExeName
+    Stop-ProcessIfRunning $LicenseGeneratorExeName
 
     Invoke-NativeStep 'Running PyInstaller...' {
         & $Python -m PyInstaller `
@@ -299,7 +313,10 @@ try {
             --workpath $PyInstallerWork `
             --specpath $PyInstallerSpec `
             --paths $Root `
+            --paths (Join-Path $Root 'backend') `
             --add-data "$FrontendDist;frontend/dist" `
+            --hidden-import license_service `
+            --hidden-import backend.license_service `
             --hidden-import python_multipart `
             --hidden-import multipart `
             --hidden-import fastapi `
@@ -309,6 +326,19 @@ try {
             --hidden-import h11 `
             --hidden-import pandas `
             --hidden-import openpyxl `
+            --hidden-import docx `
+            --hidden-import matplotlib `
+            --hidden-import PIL `
+            --hidden-import services.eclass.router `
+            --hidden-import services.eclass.adapters.ivd_big_teach_adapter `
+            --hidden-import services.eclass.adapters.ivd_communication_adapter `
+            --hidden-import legacy.eclass.big_teach `
+            --hidden-import legacy.eclass.Comunication_meeting `
+            --hidden-import backend.services.eclass.router `
+            --hidden-import backend.services.eclass.adapters.ivd_big_teach_adapter `
+            --hidden-import backend.services.eclass.adapters.ivd_communication_adapter `
+            --hidden-import backend.legacy.eclass.big_teach `
+            --hidden-import backend.legacy.eclass.Comunication_meeting `
             --collect-all cryptography `
             $Launcher
     }

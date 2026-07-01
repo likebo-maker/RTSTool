@@ -76,6 +76,13 @@
           @status-change="handleStatusChange"
           @log="appendLog"
         />
+        <EclassDataTool
+          v-else-if="activeTool === 'eclass-data'"
+          :can-export-excel="canExportExcel"
+          @feature-blocked="showUnauthorizedFeature"
+          @status-change="handleStatusChange"
+          @log="appendLog"
+        />
         <ServiceQualificationMap
           v-else-if="activeTool === 'service-qualification-map'"
           :can-export-excel="canExportExcel"
@@ -139,6 +146,7 @@ import TopBar from './components/TopBar.vue';
 import UnauthorizedModal from './components/UnauthorizedModal.vue';
 import UnauthorizedState from './components/UnauthorizedState.vue';
 import AboutPlatform from './tools/AboutPlatform.vue';
+import EclassDataTool from './tools/EclassDataTool.vue';
 import HomeOverview from './tools/HomeOverview.vue';
 import LicenseCenter from './tools/LicenseCenter.vue';
 import OnlineAssessmentTool from './tools/OnlineAssessmentTool.vue';

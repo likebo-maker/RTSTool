@@ -21,16 +21,33 @@ from openpyxl.chart.label import DataLabelList
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from license_service import (
-    FEATURES,
-    LicenseError,
-    activate_license,
-    current_license,
-    get_machine_code,
-    is_license_required,
-    license_to_info,
-    require_valid_license,
-)
+try:
+    from license_service import (
+        FEATURES,
+        LicenseError,
+        activate_license,
+        current_license,
+        get_machine_code,
+        is_license_required,
+        license_to_info,
+        require_valid_license,
+    )
+except ModuleNotFoundError:  # pragma: no cover - packaged import path
+    from backend.license_service import (
+        FEATURES,
+        LicenseError,
+        activate_license,
+        current_license,
+        get_machine_code,
+        is_license_required,
+        license_to_info,
+        require_valid_license,
+    )
+
+try:
+    from services.eclass.router import router as eclass_router
+except ModuleNotFoundError:  # pragma: no cover - package import path used by launcher
+    from backend.services.eclass.router import router as eclass_router
 
 
 APP_NAME = "技术支持效率平台"
@@ -187,6 +204,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(eclass_router)
 
 if FRONTEND_DIST_DIR.exists():
     assets_dir = FRONTEND_DIST_DIR / "assets"
@@ -3124,6 +3143,7 @@ if __name__ == "__main__":
     _prepare_runtime_streams()
     port = _find_free_port(8000)
     url = f"http://127.0.0.1:{port}"
+    print(f"{APP_NAME} 已启动：{url}", flush=True)
     threading.Timer(1.2, lambda: webbrowser.open(url)).start()
     uvicorn.run(
         app,

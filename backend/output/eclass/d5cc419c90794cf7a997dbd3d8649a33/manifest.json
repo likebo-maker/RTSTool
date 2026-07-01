@@ -1,0 +1,18 @@
+{
+  "job_id": "d5cc419c90794cf7a997dbd3d8649a33",
+  "outputs": [
+    {
+      "file_id": "summary_excel",
+      "filename": "IVD夏季大练兵成绩汇总.xlsx",
+      "path_name": "IVD夏季大练兵成绩汇总.xlsx",
+      "type": "excel"
+    },
+    {
+      "file_id": "analysis_word",
+      "filename": "IVD用户服务工程师夏季大练兵分析报告.docx",
+      "path_name": "IVD用户服务工程师夏季大练兵分析报告.docx",
+      "type": "word"
+    }
+  ],
+  "output_dir": "C:\\Users\\lhy\\Downloads\\IVD大练兵数据统计结果"
+}
