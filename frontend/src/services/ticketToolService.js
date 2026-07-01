@@ -1,3 +1,5 @@
+import { downloadFileFromUrl } from '../utils/downloadFile';
+
 export function processTimeoutTickets({ workOrderFile, qualityFile, onUploadProgress, onHeadersReceived }) {
   const formData = new FormData();
   formData.append('work_order_file', workOrderFile);
@@ -47,6 +49,7 @@ export function processOnlineBusiness({
   videoFile,
   mspFile,
   ivdCustomerFile,
+  includeSourceSheets = false,
   onUploadProgress,
   onHeadersReceived
 }) {
@@ -55,6 +58,7 @@ export function processOnlineBusiness({
   formData.append('video_file', videoFile);
   formData.append('msp_file', mspFile);
   formData.append('ivd_customer_file', ivdCustomerFile);
+  formData.append('include_source_sheets', String(Boolean(includeSourceSheets)));
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
@@ -102,6 +106,7 @@ export function processOnlineAssessment({
   mccTicketFile,
   crmVideoFile,
   qualityFile,
+  includeSourceSheets = false,
   onUploadProgress,
   onHeadersReceived
 }) {
@@ -112,6 +117,7 @@ export function processOnlineAssessment({
   formData.append('mcc_ticket_file', mccTicketFile);
   formData.append('crm_video_file', crmVideoFile);
   formData.append('quality_file', qualityFile);
+  formData.append('include_source_sheets', String(Boolean(includeSourceSheets)));
 
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
@@ -153,11 +159,5 @@ export function processOnlineAssessment({
 }
 
 export function downloadResult(downloadUrl) {
-  if (!downloadUrl) return;
-
-  const link = document.createElement('a');
-  link.href = downloadUrl;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  return downloadFileFromUrl(downloadUrl, '', '下载失败，请稍后重试');
 }

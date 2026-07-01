@@ -1,0 +1,12 @@
+{
+  "job_id": "02c7482f3a494dd6a3b15bac8d5cb096",
+  "outputs": [
+    {
+      "file_id": "summary_excel",
+      "filename": "IVD夏季大练兵成绩汇总.xlsx",
+      "path_name": "IVD夏季大练兵成绩汇总.xlsx",
+      "type": "excel"
+    }
+  ],
+  "output_dir": "C:\\Users\\lhy\\Downloads\\IVD大练兵数据统计结果"
+}

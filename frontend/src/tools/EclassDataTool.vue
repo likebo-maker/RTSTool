@@ -155,6 +155,7 @@
       :can-process="canProcess"
       :can-download="Boolean(openFolderUrl)"
       :is-processing="isProcessing"
+      :is-download-busy="activeOperationKey === 'open-folder'"
       :progress="progress"
       :result-state="resultState"
       :message="resultMessage"
@@ -186,10 +187,11 @@
           <button
             class="ghost-button compact"
             type="button"
-            :disabled="!props.canExportExcel"
+            :disabled="!props.canExportExcel || Boolean(activeOperationKey)"
             @click="downloadOutput(output)"
           >
-            <Download :size="16" />
+            <LoaderCircle v-if="activeOperationKey === output.file_id" class="spin" :size="16" />
+            <Download v-else :size="16" />
             <span>下载</span>
           </button>
         </article>
@@ -199,6 +201,11 @@
     <PreviewTable
       :preview="preview"
       empty-text="处理完成后展示主要结果表前 10 行。"
+    />
+    <BlockingOperationModal
+      :visible="operationFeedback.visible"
+      :title="operationFeedback.title"
+      :message="operationFeedback.message"
     />
   </div>
 </template>
@@ -216,9 +223,11 @@ import {
   FileSpreadsheet,
   FileText,
   GraduationCap,
+  LoaderCircle,
   UploadCloud
 } from 'lucide-vue-next';
 import ActionPanel from '../components/ActionPanel.vue';
+import BlockingOperationModal from '../components/BlockingOperationModal.vue';
 import DirectoryUploadCard from '../components/DirectoryUploadCard.vue';
 import PreviewTable from '../components/PreviewTable.vue';
 import ToolHeader from '../components/ToolHeader.vue';
@@ -235,6 +244,16 @@ import {
   getEclassCombinationState,
   setEclassCombinationState
 } from '../services/eclassPageState';
+import {
+  completeProcessTask,
+  createEclassTaskKey,
+  failProcessTask,
+  getProcessTask,
+  resetProcessTask,
+  startProcessTask,
+  updateProcessTask
+} from '../services/processTaskStore';
+import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
 const props = defineProps({
   canExportExcel: {
@@ -269,7 +288,6 @@ const moduleKey = ref(eclassPageState.moduleKey || 'big_teach');
 const schema = ref(initialCombinationState?.schema || defaultEclassSchema);
 const filesBySlot = reactive({ ...(initialCombinationState?.filesBySlot || {}) });
 const inputVersions = reactive({ ...(initialCombinationState?.inputVersions || {}) });
-const isProcessing = ref(false);
 const progress = ref(initialCombinationState?.progress || 0);
 const resultState = ref(initialCombinationState?.resultState || 'idle');
 const resultMessage = ref(initialCombinationState?.resultMessage || '等待上传文件');
@@ -277,6 +295,15 @@ const preview = ref(initialCombinationState?.preview || null);
 const outputs = ref(initialCombinationState?.outputs || []);
 const outputFolder = ref(initialCombinationState?.outputFolder || '');
 const openFolderUrl = ref(initialCombinationState?.openFolderUrl || '');
+const activeOperationKey = ref('');
+const operationFeedback = reactive({
+  visible: false,
+  title: '',
+  message: ''
+});
+
+const currentProcessTask = computed(() => getProcessTask(currentEclassTaskKey()));
+const isProcessing = computed(() => currentProcessTask.value.status === 'processing');
 
 const folderUploadSlots = computed(() => (
   (schema.value.upload_slots || []).filter((slot) => slot.input_type === 'folder')
@@ -344,6 +371,10 @@ const communicationDetectPreview = computed(() => {
 
 watchEffect(() => {
   emit('status-change', statusText.value);
+});
+
+watchEffect(() => {
+  applyProcessTaskState(currentProcessTask.value);
 });
 
 onMounted(async () => {
@@ -491,7 +522,49 @@ function slotInputKey(slotKey) {
   return `${slotKey}-${inputVersions[slotKey] || 0}`;
 }
 
+function currentEclassTaskKey() {
+  return createEclassTaskKey(productLine.value, moduleKey.value);
+}
+
+function cloneFilesBySlot() {
+  return Object.fromEntries(
+    Object.entries(filesBySlot).map(([key, files]) => [key, Array.from(files || [])])
+  );
+}
+
+function applyProcessTaskState(task) {
+  if (!task || task.status === 'idle') return;
+  const inputs = task.inputs || {};
+  if (
+    inputs.productLine &&
+    inputs.moduleKey &&
+    (inputs.productLine !== productLine.value || inputs.moduleKey !== moduleKey.value)
+  ) {
+    return;
+  }
+
+  if (task.schema || inputs.schema) {
+    schema.value = task.schema || inputs.schema;
+  }
+  if (inputs.filesBySlot) {
+    applyFilesState(inputs.filesBySlot);
+  }
+  if (inputs.inputVersions) {
+    applyInputVersionsState(inputs.inputVersions);
+  }
+  progress.value = task.progress || 0;
+  resultState.value = task.resultState || 'idle';
+  resultMessage.value = task.message || (schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发');
+  preview.value = task.preview || null;
+  outputs.value = task.outputs || [];
+  outputFolder.value = task.outputFolder || '';
+  openFolderUrl.value = task.openFolderUrl || '';
+}
+
 function resetResult() {
+  resetProcessTask(currentEclassTaskKey(), {
+    message: schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发'
+  });
   progress.value = 0;
   resultState.value = 'idle';
   resultMessage.value = schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发';
@@ -525,14 +598,26 @@ function saveMemoryState() {
 async function processFiles() {
   if (!canProcess.value) return;
 
-  isProcessing.value = true;
-  progress.value = 8;
-  resultState.value = 'processing';
-  resultMessage.value = '正在上传文件';
-  preview.value = null;
-  outputs.value = [];
-  outputFolder.value = '';
-  openFolderUrl.value = '';
+  const taskKey = currentEclassTaskKey();
+  const taskInputs = {
+    productLine: productLine.value,
+    moduleKey: moduleKey.value,
+    schema: schema.value,
+    filesBySlot: cloneFilesBySlot(),
+    inputVersions: { ...inputVersions }
+  };
+  startProcessTask(taskKey, {
+    progress: 8,
+    message: '正在上传文件',
+    schema: schema.value,
+    preview: null,
+    outputs: [],
+    outputFolder: '',
+    openFolderUrl: '',
+    inputs: taskInputs
+  });
+  applyProcessTaskState(getProcessTask(taskKey));
+  saveMemoryState();
   emit('log', `开始处理 ${schema.value.title}`);
 
   try {
@@ -542,52 +627,92 @@ async function processFiles() {
       uploadSlots: schema.value.upload_slots || [],
       filesBySlot,
       onUploadProgress: (uploadProgress) => {
-        progress.value = Math.max(8, uploadProgress);
+        updateProcessTask(taskKey, { progress: Math.max(8, uploadProgress) });
       },
       onHeadersReceived: () => {
-        progress.value = Math.max(progress.value, 68);
-        resultMessage.value = '后端正在解析并生成结果文件';
+        updateProcessTask(taskKey, {
+          progress: Math.max(getProcessTask(taskKey).progress, 68),
+          message: '后端正在解析并生成结果文件'
+        });
       }
     });
 
-    progress.value = 100;
-    resultState.value = 'success';
-    resultMessage.value = payload.message || '处理完成';
-    preview.value = payload.preview || null;
-    outputs.value = payload.outputs || [];
-    outputFolder.value = payload.output_folder || '';
-    openFolderUrl.value = payload.open_folder_url || '';
+    completeProcessTask(taskKey, {
+      message: payload.message || '处理完成',
+      preview: payload.preview || null,
+      outputs: payload.outputs || [],
+      outputFolder: payload.output_folder || '',
+      openFolderUrl: payload.open_folder_url || '',
+      schema: schema.value,
+      inputs: taskInputs
+    });
+    applyProcessTaskState(getProcessTask(taskKey));
+    saveMemoryState();
     (payload.logs || []).slice(-3).forEach((message) => emit('log', message));
-    if (outputFolder.value) {
-      emit('log', `结果已生成到：${outputFolder.value}`);
+    if (getProcessTask(taskKey).outputFolder) {
+      emit('log', `结果已生成到：${getProcessTask(taskKey).outputFolder}`);
     }
   } catch (error) {
-    progress.value = 0;
-    resultState.value = 'error';
-    resultMessage.value = error.message || 'E课堂处理失败，请检查上传文件';
-    emit('log', resultMessage.value);
-  } finally {
-    isProcessing.value = false;
+    const message = error.message || 'E课堂处理失败，请检查上传文件';
+    failProcessTask(taskKey, message, {
+      schema: schema.value,
+      inputs: taskInputs
+    });
+    applyProcessTaskState(getProcessTask(taskKey));
+    saveMemoryState();
+    emit('log', message);
   }
 }
 
-function downloadOutput(output) {
+async function runBlockingOperation(key, title, message, action, minimumVisibleMs = 900) {
+  if (activeOperationKey.value) return;
+  activeOperationKey.value = key;
+  operationFeedback.visible = true;
+  operationFeedback.title = title;
+  operationFeedback.message = message;
+  try {
+    await runWithMinimumVisibleTime(action, minimumVisibleMs);
+  } catch (error) {
+    emit('log', error.message || '当前操作失败');
+  } finally {
+    operationFeedback.visible = false;
+    activeOperationKey.value = '';
+  }
+}
+
+async function downloadOutput(output) {
   if (!props.canExportExcel) {
     emit('feature-blocked', 'Excel导出');
     return;
   }
-  downloadEclassResult(output.download_url, output.filename);
-  emit('log', `已触发下载：${output.filename}`);
+  if (!output?.download_url || activeOperationKey.value) return;
+  await runBlockingOperation(
+    output.file_id,
+    '正在下载结果文件',
+    `系统正在准备 ${output.filename || '结果文件'}，请不要重复点击下载按钮。`,
+    async () => {
+      await downloadEclassResult(output.download_url, output.filename);
+      emit('log', `已触发下载：${output.filename}`);
+    }
+  );
 }
 
 async function openOutputFolder() {
-  if (!openFolderUrl.value) return;
-  try {
-    const payload = await openEclassOutputFolder(openFolderUrl.value);
-    emit('log', `已打开输出文件夹：${payload.output_folder || outputFolder.value}`);
-  } catch (error) {
-    emit('log', error.message || '打开输出文件夹失败');
-  }
+  if (!openFolderUrl.value || activeOperationKey.value) return;
+  await runBlockingOperation(
+    'open-folder',
+    '正在打开输出文件夹',
+    '系统正在请求本机打开结果目录，请不要重复点击按钮。',
+    async () => {
+      try {
+        const payload = await openEclassOutputFolder(openFolderUrl.value);
+        emit('log', `已打开输出文件夹：${payload.output_folder || outputFolder.value}`);
+      } catch (error) {
+        emit('log', error.message || '打开输出文件夹失败');
+      }
+    },
+    700
+  );
 }
 
 function relativePath(file) {

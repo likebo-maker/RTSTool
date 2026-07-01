@@ -1,3 +1,5 @@
+import { downloadFileFromUrl } from '../utils/downloadFile';
+
 async function parseJsonResponse(response, fallbackMessage) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -95,13 +97,7 @@ export function processEclassData({
 }
 
 export function downloadEclassResult(downloadUrl, filename) {
-  if (!downloadUrl) return;
-  const link = document.createElement('a');
-  link.href = downloadUrl;
-  if (filename) link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  return downloadFileFromUrl(downloadUrl, filename, 'E课堂结果文件下载失败');
 }
 
 export async function openEclassOutputFolder(openFolderUrl) {

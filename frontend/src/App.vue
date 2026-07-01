@@ -83,13 +83,7 @@
           @status-change="handleStatusChange"
           @log="appendLog"
         />
-        <ServiceQualificationMap
-          v-else-if="activeTool === 'service-qualification-map'"
-          :can-export-excel="canExportExcel"
-          @feature-blocked="showUnauthorizedFeature"
-          @status-change="handleStatusChange"
-          @log="appendLog"
-        />
+        <template v-else-if="activeTool === 'service-qualification-map'"></template>
         <TrainingCoverageMap
           v-else-if="activeTool === 'training-coverage-map'"
           :can-export-excel="canExportExcel"
@@ -107,6 +101,15 @@
           v-else
           :tool-key="activeTool"
           @status-change="handleStatusChange"
+        />
+        <ServiceQualificationMap
+          v-if="!routeBlocked && (serviceQualificationMounted || activeTool === 'service-qualification-map')"
+          v-show="serviceQualificationVisible"
+          :active="serviceQualificationVisible"
+          :can-export-excel="canExportExcel"
+          @feature-blocked="showUnauthorizedFeature"
+          @status-change="handleStatusChange"
+          @log="appendLog"
         />
       </main>
 
@@ -135,7 +138,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import LoginView from './components/LoginView.vue';
 import LicenseActivationView from './components/LicenseActivationView.vue';
 import SecurityDisclaimerModal from './components/SecurityDisclaimerModal.vue';
@@ -172,6 +175,7 @@ const licenseRequired = ref(false);
 const licenseAuthorized = ref(false);
 const licenseStatusInfo = ref({});
 const licenseBootMessage = ref('正在读取本机授权状态...');
+const serviceQualificationMounted = ref(false);
 const unauthorizedModal = reactive({
   visible: false,
   featureName: ''
@@ -181,8 +185,19 @@ const licenseExpired = computed(() => isLicenseExpired(licenseStatusInfo.value))
 const routeBlocked = computed(() => !hasToolAccess(licenseStatusInfo.value, activeTool.value));
 const activeToolName = computed(() => toolFeatureLabel(activeTool.value));
 const canExportExcel = computed(() => hasFeature(licenseStatusInfo.value, FEATURES.EXPORT_EXCEL));
+const serviceQualificationVisible = computed(() => !routeBlocked.value && activeTool.value === 'service-qualification-map');
 
 fetchLicenseStatus();
+
+watch(
+  activeTool,
+  (toolKey) => {
+    if (toolKey === 'service-qualification-map') {
+      serviceQualificationMounted.value = true;
+    }
+  },
+  { immediate: true }
+);
 
 function handleLoginSuccess() {
   isAuthenticated.value = true;

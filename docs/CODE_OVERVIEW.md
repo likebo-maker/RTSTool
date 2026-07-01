@@ -1,243 +1,294 @@
-# RTS工程师效率工具箱代码说明
+# 技术支持效率平台代码总览
 
 ## 1. 项目定位
 
-本项目是面向 RTS 技术支持工程师的本地效率工具箱。当前已上线核心工具为「超时工单筛选工具」，用于上传「工单报表」和「质量上升报表」，由后端完成 Excel 解析、筛选、对比和导出。
+本项目是面向技术支持、服务运营和培训管理场景的本地效率平台。它以浏览器式前端作为操作界面，以 FastAPI 后端处理 Excel、Word、授权和文件输出，最终可打包成 Windows 单文件 exe 供用户离线使用。
 
-当前技术栈：
+当前已接入的核心能力包括：
 
-- 前端：Vue 3、Vite、lucide-vue-next
-- 后端：FastAPI、pandas、openpyxl、python-multipart
+- 超时工单筛选
+- 在线服务项目目标计算
+- 在线服务考核指标计算
+- 中国区人员服务资质地图
+- 中国区培训覆盖地图
+- E课堂 IVD 大练兵数据处理
+- E课堂 IVD 交流会数据处理
+- Windows 授权与 License Center
+
+技术栈：
+
+- 前端：Vue 3、Vite、lucide-vue-next、ECharts、xlsx
+- 后端：FastAPI、pandas、openpyxl、python-multipart、python-docx、matplotlib
+- 授权：RSA PSS + SHA-256，依赖 `cryptography`
 - 打包：PyInstaller，Windows 单文件 exe
-- 本地启动：`start.sh`
 
-## 2. 目录结构
+## 2. 维护文档索引
+
+详细计算逻辑已经按模块拆分到独立文档：
+
+- [modules_index.md](modules_index.md)：模块文档总索引
+- [module_timeout_ticket_filter.md](module_timeout_ticket_filter.md)：超时工单筛选
+- [module_online_service_target.md](module_online_service_target.md)：在线服务项目目标
+- [module_online_service_assessment.md](module_online_service_assessment.md)：在线服务考核指标
+- [module_service_qualification_map.md](module_service_qualification_map.md)：人员服务资质地图
+- [module_training_coverage_map.md](module_training_coverage_map.md)：培训覆盖地图
+- [module_eclass_common_framework.md](module_eclass_common_framework.md)：E课堂公共框架
+- [module_eclass_big_teach.md](module_eclass_big_teach.md)：E课堂 IVD 大练兵
+- [module_eclass_communication.md](module_eclass_communication.md)：E课堂 IVD 交流会
+- [module_license_and_runtime.md](module_license_and_runtime.md)：授权与运行时
+
+本文件只做代码结构总览。维护具体业务口径时，优先阅读对应模块文档。
+
+## 3. 目录结构
 
 ```text
 .
-├── README.md                         # 项目使用说明
-├── start.sh                          # macOS / Unix 一键启动脚本
 ├── backend
-│   ├── main.py                       # FastAPI 应用、业务逻辑、前端静态资源托管
-│   ├── requirements.txt              # 后端依赖
-│   └── output
-│       └── .gitkeep                  # 导出目录占位，导出的 xlsx 不入库
+│   ├── main.py                         # FastAPI 主应用、通用 Excel 计算接口、静态资源托管
+│   ├── license_service.py              # 授权校验、机器码、功能权限
+│   ├── requirements.txt                # 后端依赖
+│   ├── legacy
+│   │   └── eclass                      # E课堂旧算法迁移代码
+│   ├── services
+│   │   └── eclass                      # E课堂 router、schema、runner、adapter
+│   └── output                          # 开发环境导出目录
 ├── frontend
-│   ├── index.html                    # Vite HTML 入口
-│   ├── package.json                  # 前端依赖与脚本
-│   ├── vite.config.js                # Vite 构建配置
+│   ├── package.json
+│   ├── vite.config.js
 │   └── src
-│       ├── App.vue                   # 应用壳层和路由状态
-│       ├── main.js                   # Vue 挂载入口
-│       ├── styles.css                # 全局深色科技风样式
-│       ├── components                # 通用 UI 组件
-│       ├── services                  # 前端 API 请求封装
-│       └── tools                     # 具体工具页面
-└── packaging
-    └── windows
-        ├── build_windows.bat         # Windows 双击打包入口
-        ├── build_windows.ps1         # PyInstaller 打包主脚本
-        └── launcher.py               # exe 运行入口，启动后端并打开浏览器
+│       ├── App.vue                     # 前端壳层、工具切换、授权拦截
+│       ├── components                  # 通用 UI 组件
+│       ├── services                    # API、本地缓存、页面状态
+│       ├── tools                       # 各业务工具页面
+│       └── utils                       # 地图聚合、Excel 解析、授权工具函数
+├── packaging
+│   └── windows
+│       ├── build_windows.bat           # Windows 双击打包入口
+│       ├── build_windows.ps1           # 前端构建、依赖安装、PyInstaller 打包
+│       └── launcher.py                 # exe 入口，启动 FastAPI 并打开浏览器
+├── tools
+│   ├── license_core.py                 # 注册码生成核心逻辑
+│   └── license_generator_gui.py        # Tkinter 授权生成工具
+└── docs                                # 维护文档
 ```
 
-## 3. 前端架构
+## 4. 前端架构
 
-### 3.1 应用入口
+### 4.1 应用入口
 
-[frontend/src/App.vue](../frontend/src/App.vue) 是前端应用壳层，负责：
+[frontend/src/App.vue](../frontend/src/App.vue) 是前端总壳层，负责：
 
-- 登录前显示 `LoginView`
-- 登录后显示工具箱主框架
-- 管理当前工具状态 `activeTool`
-- 管理侧边栏折叠状态 `sidebarCollapsed`
-- 接收工具运行状态和日志，传递给底部状态栏
+- 启动时读取 `/api/license/status`
+- 未授权时显示授权激活页
+- 授权通过后显示本地登录页
+- 登录后显示平台主框架
+- 管理当前工具 `activeTool`
+- 根据授权信息阻止未授权模块访问
+- 向工具组件传递 `canExportExcel`
+- 汇总工具状态和日志到底部状态栏
 
-当前工具切换逻辑：
+当前主要工具 key：
 
-- `home`：首页总览
-- `timeout-ticket-filter`：超时工单筛选工具
-- 其他 key：进入占位工具页
+- `home`
+- `timeout-ticket-filter`
+- `online-business-calculation`
+- `online-service-assessment`
+- `service-qualification-map`
+- `training-coverage-map`
+- `eclass-data`
+- `license-center`
+- `about-platform`
 
-### 3.2 登录页
+### 4.2 平台框架组件
 
-[frontend/src/components/LoginView.vue](../frontend/src/components/LoginView.vue) 实现本地登录层。
+- [Sidebar.vue](../frontend/src/components/Sidebar.vue)：左侧导航，按工单工具、培训发展管理、E课堂、系统管理分组。
+- [TopBar.vue](../frontend/src/components/TopBar.vue)：顶部栏，展示品牌、授权入口和信息安全声明。
+- [StatusBar.vue](../frontend/src/components/StatusBar.vue)：底部运行状态和最近日志。
+- [LoginView.vue](../frontend/src/components/LoginView.vue)：本地登录页。
+- [LicenseActivationView.vue](../frontend/src/components/LicenseActivationView.vue)：未授权激活页。
+- [UnauthorizedState.vue](../frontend/src/components/UnauthorizedState.vue)：功能未授权页面。
+- [SecurityDisclaimerModal.vue](../frontend/src/components/SecurityDisclaimerModal.vue)：信息安全声明。
 
-当前校验规则：
+本地登录仍是前端内存状态，账号密码校验不等同于安全认证。真正的功能控制依赖授权接口返回的功能权限。
 
-- 用户名：`admin`
-- 密码：`admin`
-- 校验时不区分大小写
-- 空输入提示：`请输入用户名和密码`
-- 账号或密码错误提示：`用户名或密码错误，请重新输入`
+### 4.3 后端计算型工具页面
 
-登录状态只保存在前端内存中，刷新页面后需要重新登录。当前没有接入后端认证、数据库或会话持久化。
+这些页面上传文件到 FastAPI，由后端生成结果 Excel：
 
-### 3.3 平台框架组件
+- [TimeoutTicketTool.vue](../frontend/src/tools/TimeoutTicketTool.vue)
+- [OnlineBusinessTool.vue](../frontend/src/tools/OnlineBusinessTool.vue)
+- [OnlineAssessmentTool.vue](../frontend/src/tools/OnlineAssessmentTool.vue)
 
-- [Sidebar.vue](../frontend/src/components/Sidebar.vue)：左侧导航栏，包含首页、工单工具、超时工单筛选、E课堂数据处理入口。
-- [TopBar.vue](../frontend/src/components/TopBar.vue)：顶部信息栏，显示平台名称和深色模式标识。
-- [StatusBar.vue](../frontend/src/components/StatusBar.vue)：底部状态栏，显示当前状态、最新日志和版本号。
-- [ToolPlaceholder.vue](../frontend/src/components/ToolPlaceholder.vue)：规划中工具的占位页。
+对应 service：
 
-侧边栏当前为手动折叠/展开：点击按钮切换，折叠后保持折叠状态，不再依赖 hover 自动展开。
+- [ticketToolService.js](../frontend/src/services/ticketToolService.js)
+- [onlineBusinessService.js](../frontend/src/services/onlineBusinessService.js)
+- [onlineAssessmentService.js](../frontend/src/services/onlineAssessmentService.js)
 
-### 3.4 首页总览
+### 4.4 前端本地解析型工具页面
 
-[frontend/src/tools/HomeOverview.vue](../frontend/src/tools/HomeOverview.vue) 是工具箱首页，包含：
+这两类地图工具不把 Excel 发给后端，而是在浏览器本地解析和聚合：
 
-- 平台欢迎区
-- 「快速进入超时工单筛选」按钮
-- 当前已上线工具卡片
-- 后续工具规划卡片
-- 服务状态与版本信息
+- [ServiceQualificationMap.vue](../frontend/src/tools/ServiceQualificationMap.vue)
+- [TrainingCoverageMap.vue](../frontend/src/tools/TrainingCoverageMap.vue)
 
-首页的核心目标是让用户一进入系统即可知道当前可用工具，并能一次点击进入核心功能。
+核心工具函数：
 
-### 3.5 超时工单筛选工具
+- `qualificationParser.js`：资质 Excel 解析
+- `qualificationAggregator.js`：资质指标和地图点聚合
+- `qualificationTypes.js`：资质到期状态计算
+- `trainingParser.js`：培训 Excel 解析
+- `trainingAggregator.js`：培训指标和地图点聚合
+- `trainingStatusNormalizer.js`：培训结果合格/不合格归一化
 
-[frontend/src/tools/TimeoutTicketTool.vue](../frontend/src/tools/TimeoutTicketTool.vue) 是当前核心业务页面，包含：
+导入结果会通过 [localDataStore.js](../frontend/src/services/localDataStore.js) 缓存在 IndexedDB，失败时降级到 localStorage。
 
-- 工单报表上传
-- 质量上升报表上传
-- 执行处理按钮
-- 进度条与状态提示
-- 数据统计卡片
-- 前 10 行结果预览
-- 下载最终表格按钮
+### 4.5 E课堂页面
 
-工具调用 [ticketToolService.js](../frontend/src/services/ticketToolService.js) 中的：
+[EclassDataTool.vue](../frontend/src/tools/EclassDataTool.vue) 是 E课堂统一页面，通过后端 schema 动态渲染上传槽位。当前支持：
 
-- `processTimeoutTickets()`：上传两个文件到 `/api/process`
-- `downloadResult()`：触发 `/api/download/{job_id}` 下载
+- IVD 大练兵
+- IVD 交流会
 
-## 4. 后端架构
+前端重点：
 
-后端主要代码集中在 [backend/main.py](../backend/main.py)。
+- 文件夹上传使用 [DirectoryUploadCard.vue](../frontend/src/components/DirectoryUploadCard.vue)。
+- API 封装在 [eclassService.js](../frontend/src/services/eclassService.js)。
+- 页面状态按 `productLine::moduleKey` 缓存在 [eclassPageState.js](../frontend/src/services/eclassPageState.js)，避免大练兵和交流会切换时互相覆盖结果。
+- “打开输出文件夹”调用 `/api/eclass/open-output-folder/{job_id}`。
 
-### 4.1 应用职责
+## 5. 后端架构
 
-`backend/main.py` 同时负责：
+### 5.1 FastAPI 主应用
+
+[backend/main.py](../backend/main.py) 负责：
 
 - FastAPI 应用初始化
 - CORS 配置
 - 前端静态资源托管
-- Excel / CSV 文件读取
-- 字段别名识别
-- 工单筛选和质量上升报表对比
-- 导出 Excel
-- PyInstaller 冻结环境兼容
-- 本地运行时自动打开浏览器
+- 非 E课堂的 Excel 计算模块
+- 授权接口
+- 下载接口
+- PyInstaller 冻结路径兼容
+- 开发环境直接运行时自动打开浏览器
 
-### 4.2 API
+后端会通过 `app.include_router(eclass_router)` 接入 E课堂子路由。
 
-| 方法 | 路径 | 说明 |
+### 5.2 API 列表
+
+| 方法 | 路径 | 功能 |
 | --- | --- | --- |
 | GET | `/api/health` | 健康检查 |
-| POST | `/api/process` | 上传并处理工单报表、质量上升报表 |
-| GET | `/api/download/{job_id}` | 下载处理后的 Excel |
+| GET | `/api/license/machine-code` | 获取当前机器码 |
+| GET | `/api/license/status` | 获取授权状态 |
+| POST | `/api/license/activate` | 激活注册码 |
+| POST | `/api/license/verify` | 校验当前授权 |
+| POST | `/api/process` | 超时工单筛选 |
+| GET | `/api/download/{job_id}` | 下载超时工单筛选结果 |
+| POST | `/api/online-business/process` | 在线服务项目目标计算 |
+| GET | `/api/online-business/download/{job_id}` | 下载在线服务项目目标结果 |
+| POST | `/api/online-assessment/process` | 在线服务考核指标计算 |
+| GET | `/api/online-assessment/download/{job_id}` | 下载在线服务考核结果 |
+| GET | `/api/eclass/options` | 获取 E课堂产线和业务方向 |
+| GET | `/api/eclass/upload-schema` | 获取 E课堂上传 schema |
+| POST | `/api/eclass/process` | 处理 E课堂数据 |
+| GET | `/api/eclass/download/{job_id}/{file_id}` | 下载 E课堂结果 |
+| POST | `/api/eclass/open-output-folder/{job_id}` | 打开 E课堂输出文件夹 |
 | GET | `/` | 返回前端首页 |
-| GET | `/{full_path:path}` | 支持前端 SPA 路由回退 |
+| GET | `/{full_path:path}` | SPA 路由回退 |
 
-### 4.3 上传文件支持
+### 5.3 授权拦截
 
-后端支持以下格式：
+业务接口会调用 `require_valid_license(feature)` 做权限校验。主要对应关系：
 
-- `.xlsx`
-- `.xlsm`
-- `.xls`
-- `.csv`
+- 超时工单筛选：`timeout_filter`
+- 在线服务项目目标：`online_service_target`
+- 在线服务考核指标：`online_service_kpi`
+- E课堂数据处理：`elearning_data`
+- 下载 Excel：额外需要 `export_excel`
 
-CSV 读取时优先使用 `utf-8-sig`，失败后回退到 `gbk`。
+前端本地解析型工具的授权主要在前端路由层拦截，功能 key 定义在 [licenseFeatures.js](../frontend/src/utils/licenseFeatures.js)。
 
-### 4.4 字段别名
+### 5.4 输出目录
 
-工单报表必需字段：
-
-- 大产线：`大产线`、`产品线`
-- 工单状态：`工单状态`、`状态`
-- 工单号：`工单号`、`服务工单号`、`工单编号`
-
-质量上升报表必需字段：
-
-- 前续工单：`前续工单`、`工单号`、`服务工单号`、`前续工单号`
-
-字段匹配会忽略表头中的空白字符。
-
-### 4.5 业务处理流程
-
-1. 读取工单报表。
-2. 读取质量上升报表。
-3. 在工单报表中筛选：
-   - `大产线 = IVD`
-   - `工单状态 ∈ [服务执行中，已派工，已预约]`
-4. 读取质量上升报表的 `前续工单` 字段，构建已存在工单号集合。
-5. 遍历筛选后的工单报表：
-   - 如果工单号不存在于质量上升报表的前续工单集合中，则保留整行。
-   - 如果已存在，则排除。
-6. 生成导出文件：
-   - 文件名：`工单报表-已筛选-{job_id}.xlsx`
-   - 工作表名：`工单报表 - 已筛选`
-   - 表头保持原工单报表一致
-7. 返回统计信息、下载地址和前 10 行预览数据。
-
-### 4.6 统计字段
-
-`/api/process` 返回的 `stats` 包含：
-
-- `work_order_total`：工单报表总行数
-- `quality_total`：质量上升报表总行数
-- `pending_total`：按大产线和状态筛选后的待筛选行数
-- `matched_quality_ticket_total`：待筛选工单中已存在于质量上升报表的数量
-- `result_total`：最终导出数量
-
-## 5. 运行方式
-
-### 5.1 macOS / Unix 一键启动
-
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-脚本会自动：
-
-1. 检查 `python3`、`npm`、`curl`
-2. 创建或复用根目录 `.venv`
-3. 安装后端依赖
-4. 安装前端依赖
-5. 执行前端构建
-6. 启动后端服务
-7. 打开浏览器访问 `http://127.0.0.1:8000`
-
-### 5.2 前后端分开开发
-
-后端：
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-前端：
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-浏览器访问：
+开发环境普通后端计算输出：
 
 ```text
-http://127.0.0.1:5173
+backend/output
 ```
 
-开发模式下，前端请求 `/api/process`，需要确保后端服务同时运行。
+打包后普通后端计算输出：
 
-## 6. Windows 打包
+```text
+%LOCALAPPDATA%\技术支持效率平台\output
+```
+
+E课堂开发环境任务目录：
+
+```text
+backend/output/eclass/{job_id}
+```
+
+E课堂打包后任务目录：
+
+```text
+%LOCALAPPDATA%\技术支持效率平台\output\eclass\{job_id}
+```
+
+E课堂最终用户结果目录：
+
+```text
+%USERPROFILE%\Downloads\IVD大练兵数据统计结果
+%USERPROFILE%\Downloads\IVD交流会数据统计结果
+```
+
+## 6. E课堂子系统
+
+E课堂已从 `backend/main.py` 中分离到 `backend/services/eclass`：
+
+- `schemas.py`：定义产线、业务方向和上传槽位。
+- `router.py`：定义 `/api/eclass/*` 接口。
+- `runner.py`：任务调度、保存上传、调用 adapter、发布结果、写 manifest。
+- `file_utils.py`：安全文件名、路径校验、上传保存、结果发布。
+- `preview.py`：结果预览。
+- `adapters/ivd_big_teach_adapter.py`：调用大练兵底层算法。
+- `adapters/ivd_communication_adapter.py`：调用交流会底层算法。
+
+底层旧算法保留在：
+
+- `backend/legacy/eclass/big_teach.py`
+- `backend/legacy/eclass/Comunication_meeting.py`
+
+新增 E课堂模块时，建议流程：
+
+1. 在 `schemas.py` 增加产线和业务方向组合。
+2. 新建 adapter，只接收 `input_files` 和 `output_dir`。
+3. 在 `runner.py::_resolve_adapter` 注册组合。
+4. 必要时把旧脚本迁移到 `backend/legacy/eclass`。
+5. 确认打包脚本加入 hidden import。
+
+## 7. 授权与 License Center
+
+后端授权逻辑在 [backend/license_service.py](../backend/license_service.py)。
+
+主要能力：
+
+- Windows 启用授权校验。
+- 非 Windows 默认放行全部功能。
+- 根据 Windows MachineGuid 等稳定信息生成机器码。
+- 解析 `RTS-LIC-` 注册码。
+- 使用内置公钥验签。
+- 校验机器码、到期日、版本和功能权限。
+- 激活后写入 `data/license.json`。
+
+授权生成工具：
+
+- [tools/license_core.py](../tools/license_core.py)：用私钥生成注册码。
+- [tools/license_generator_gui.py](../tools/license_generator_gui.py)：Tkinter GUI。
+
+详细逻辑见 [module_license_and_runtime.md](module_license_and_runtime.md)。
+
+## 8. Windows 打包
 
 Windows 打包入口：
 
@@ -247,97 +298,156 @@ packaging\windows\build_windows.bat
 
 核心脚本：
 
-- [build_windows.bat](../packaging/windows/build_windows.bat)：双击入口，负责调用 PowerShell 并生成 bootstrap 日志。
-- [build_windows.ps1](../packaging/windows/build_windows.ps1)：构建前端、创建打包虚拟环境、安装依赖、执行 PyInstaller。
-- [launcher.py](../packaging/windows/launcher.py)：exe 运行入口，启动 FastAPI 服务并自动打开浏览器。
+- [build_windows.bat](../packaging/windows/build_windows.bat)
+- [build_windows.ps1](../packaging/windows/build_windows.ps1)
+- [launcher.py](../packaging/windows/launcher.py)
 
-### 6.1 Python 版本要求
+打包脚本会：
 
-打包脚本只允许 Python 3.11 或 3.12。
+1. 检查或构建 `frontend/dist`。
+2. 选择 Python 3.11 或 3.12 正式版。
+3. 安装后端依赖和 PyInstaller。
+4. 使用 PyInstaller 打包 `RTS_Toolbox.exe`。
+5. 使用 PyInstaller 打包 `RTS_License_Generator.exe`。
 
-原因：当前 `pandas==2.2.3` 在 Python 3.13/3.14 上可能没有稳定的 Windows wheel，容易触发源码编译失败。
+主程序打包的关键点：
 
-脚本探测顺序：
+- `--paths $Root`
+- `--paths backend`
+- `--add-data frontend/dist;frontend/dist`
+- `--hidden-import license_service`
+- `--hidden-import backend.license_service`
+- `--hidden-import services.eclass...`
+- `--hidden-import backend.services.eclass...`
+- `--hidden-import legacy.eclass...`
+- `--collect-all cryptography`
 
-1. `py -3.12`
-2. `py -3.11`
-3. `py -0p` 中列出的 3.12 / 3.11 真实路径
-4. `python`
+这些配置用于解决打包后动态 import 找不到模块的问题。
 
-### 6.2 打包输出
-
-成功后生成：
+打包输出：
 
 ```text
 dist\RTS_Toolbox.exe
+dist\RTS_License_Generator.exe
 ```
 
-exe 运行后会：
-
-1. 找可用端口，默认从 `8000` 开始。
-2. 启动本地 FastAPI 服务。
-3. 自动打开浏览器。
-4. 托管已打包的前端静态资源。
-
-### 6.3 日志位置
-
-构建日志：
-
-```text
-.build\windows\build.log
-packaging\windows\build_bootstrap.log
-```
-
-exe 运行日志：
+运行时日志：
 
 ```text
 %LOCALAPPDATA%\RTS_Toolbox\logs\runtime.log
+%LOCALAPPDATA%\技术支持效率平台\logs\runtime.log
 ```
 
-导出文件运行时存储：
+## 9. 开发运行方式
+
+### 9.1 后端直接运行
+
+```powershell
+cd /d E:\MRCODE\RTSTool
+python backend\main.py
+```
+
+浏览器访问：
 
 ```text
-%LOCALAPPDATA%\RTS工程师效率工具箱\output
+http://127.0.0.1:8000
 ```
 
-## 7. 扩展新工具
+如果端口被占用，后端会从 8000 起查找可用端口。
 
-新增一个工具时，建议按以下步骤：
+### 9.2 前端单独开发
 
-1. 在 `frontend/src/tools` 新增工具页面组件。
-2. 如果需要请求后端，在 `frontend/src/services` 新增对应 service。
-3. 在 `frontend/src/App.vue` 中根据新的 `activeTool` 加载工具组件。
-4. 在 `frontend/src/components/Sidebar.vue` 中新增导航入口。
-5. 如需首页入口，在 `frontend/src/tools/HomeOverview.vue` 中增加工具卡片。
-6. 后端新增 API 时，优先保持现有 `/api/process` 和 `/api/download/{job_id}` 行为不变。
+```powershell
+cd /d E:\MRCODE\RTSTool\frontend
+npm install
+npm run dev
+```
 
-## 8. Git 与忽略规则
+浏览器访问 Vite 地址，通常是：
 
-`.gitignore` 当前排除：
+```text
+http://127.0.0.1:5173
+```
 
-- `.venv/`
-- `.idea/`
-- `.build/`
-- `dist/`
-- `frontend/node_modules/`
-- `frontend/dist/`
-- 后端导出的 Excel
-- Python 缓存和日志文件
-- 未使用或临时资源
+前端开发时需要后端同时运行，Vite 代理会把 `/api` 请求转发到后端。
 
-需要提交的通常是：
+### 9.3 生产前端构建
+
+```powershell
+cd /d E:\MRCODE\RTSTool\frontend
+npm run build
+```
+
+构建产物在：
+
+```text
+frontend\dist
+```
+
+后端打包或直接运行时会托管该目录。
+
+## 10. 新增模块建议
+
+### 10.1 新增后端 Excel 计算模块
+
+建议步骤：
+
+1. 在 `frontend/src/tools` 新增工具页面。
+2. 在 `frontend/src/services` 新增 API 封装。
+3. 在 `App.vue` 注册工具组件和 `activeTool` 分支。
+4. 在 `Sidebar.vue` 和 `HomeOverview.vue` 增加入口。
+5. 在 `backend/main.py` 或独立 router 中新增处理接口。
+6. 在 `license_service.py`、`licenseFeatures.js` 和 License Generator 中新增功能 key。
+7. 在 `docs` 中新增模块维护文档。
+
+### 10.2 新增前端本地解析模块
+
+建议步骤：
+
+1. 新增 parser，负责 Excel 字段识别和标准记录生成。
+2. 新增 aggregator，负责筛选、统计、排名、地图点和图表数据。
+3. 新增 export 工具。
+4. 通过 `localDataStore.js` 缓存导入结果。
+5. 将授权 key 接入前端路由拦截。
+
+### 10.3 新增 E课堂业务方向
+
+建议步骤：
+
+1. 在 `backend/services/eclass/schemas.py` 增加上传 schema。
+2. 新增 adapter，适配底层算法输入输出。
+3. 在 `runner.py` 注册 adapter。
+4. 如果有旧脚本，放入 `backend/legacy/eclass` 并减少对 GUI 路径的依赖。
+5. 在 `packaging/windows/build_windows.ps1` 补 hidden import。
+6. 更新 E课堂模块文档。
+
+## 11. Git 与忽略规则
+
+通常应该提交：
 
 - 前端源码
 - 后端源码
 - 打包脚本
 - 依赖清单
-- README / docs 文档
-- 必要的静态资源
+- 文档
+- 必要静态资源
 
-## 9. 当前约束
+通常不应提交：
 
-- 登录只做前端本地校验，不具备安全认证能力。
-- 后端导出文件没有定时清理机制。
-- 业务逻辑目前集中在 `backend/main.py`，后续工具增多后建议拆分路由和服务模块。
-- 当前工具只处理第一张工作表。
-- 导出表头保持原工单报表一致，不额外补充质量上升报表字段。
+- `.venv/`
+- `.build/`
+- `dist/`
+- `frontend/node_modules/`
+- `frontend/dist/`
+- `backend/output/` 下的结果文件
+- `__pycache__/`
+- 用户上传的业务数据
+- 本机授权状态文件 `data/license.json`
+
+## 12. 当前维护重点
+
+- `backend/main.py` 仍承载多个后端计算模块，后续继续扩展时建议逐步拆分 router 和 service。
+- E课堂已经形成较清晰的 schema、runner、adapter 架构，新增 E课堂功能优先沿用这条线。
+- 前端本地地图模块计算都在浏览器完成，大文件性能取决于用户电脑。
+- 授权功能 key 在前端、后端和授权生成工具中都有映射，新增或改名时必须同步。
+- PyInstaller 打包对动态 import 敏感，新增后端模块后要同步检查 hidden import。

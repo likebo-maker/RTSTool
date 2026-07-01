@@ -94,6 +94,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  active: {
+    type: Boolean,
+    default: true
+  },
   emptyText: {
     type: String,
     default: '暂无符合条件的资质数据，请调整筛选条件。'
@@ -182,6 +186,17 @@ watch(
     if (!isLoading) {
       renderMarkers();
     }
+  }
+);
+
+watch(
+  () => props.active,
+  async (isActive) => {
+    if (!isActive) return;
+    await nextTick();
+    mapInstance?.resize?.();
+    renderRegionLayers();
+    renderMarkers();
   }
 );
 

@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -2681,6 +2681,7 @@ def process_online_assessment_excels(
     mcc_ticket_file: UploadFile,
     crm_video_file: UploadFile,
     quality_file: UploadFile,
+    include_source_sheets: bool = False,
 ) -> dict[str, Any]:
     msp_df = _read_assessment_table(msp_file, "MSP工单总表", "MSP工单原始数据")
     mcc_call_df = _read_assessment_table(mcc_call_file, "MCC通话记录")
@@ -2711,12 +2712,13 @@ def process_online_assessment_excels(
     filename = f"在线服务考核指标计算表_{job_id}.xlsx"
     output_path = OUTPUT_DIR / filename
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        msp_df.to_excel(writer, index=False, sheet_name="源表-MSP工单总表")
-        mcc_call_df.to_excel(writer, index=False, sheet_name="源表-MCC通话记录")
-        video_service_df.to_excel(writer, index=False, sheet_name="源表-视频服务记录")
-        mcc_ticket_df.to_excel(writer, index=False, sheet_name="源表-MCC热线工单")
-        crm_video_df.to_excel(writer, index=False, sheet_name="源表-CRM视频工单")
-        quality_df.to_excel(writer, index=False, sheet_name="源表-每日质检记录")
+        if include_source_sheets:
+            msp_df.to_excel(writer, index=False, sheet_name="源表-MSP工单总表")
+            mcc_call_df.to_excel(writer, index=False, sheet_name="源表-MCC通话记录")
+            video_service_df.to_excel(writer, index=False, sheet_name="源表-视频服务记录")
+            mcc_ticket_df.to_excel(writer, index=False, sheet_name="源表-MCC热线工单")
+            crm_video_df.to_excel(writer, index=False, sheet_name="源表-CRM视频工单")
+            quality_df.to_excel(writer, index=False, sheet_name="源表-每日质检记录")
         _write_assessment_results(writer, branch_df, overall_df, provider_df)
         _write_assessment_logic_sheet(writer)
         _style_assessment_workbook(writer)
@@ -2732,6 +2734,7 @@ def process_online_assessment_excels(
             "mcc_ticket_total": int(len(mcc_ticket_df)),
             "crm_video_total": int(len(crm_video_df)),
             "quality_total": int(len(quality_df)),
+            "include_source_sheets": include_source_sheets,
         },
         "preview": _make_preview(provider_df),
     }
@@ -2742,6 +2745,7 @@ def process_online_business_excels(
     video_file: UploadFile,
     msp_file: UploadFile,
     ivd_customer_file: UploadFile,
+    include_source_sheets: bool = False,
 ) -> dict[str, Any]:
     _validate_xlsx_upload_any(
         mcc_file,
@@ -2843,11 +2847,12 @@ def process_online_business_excels(
     output_path = OUTPUT_DIR / filename
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        mcc_df.to_excel(writer, index=False, sheet_name="MCC热线原始数据")
-        video_df.to_excel(writer, index=False, sheet_name="视频工单原始数据")
-        msp_df.to_excel(writer, index=False, sheet_name="MSP工单原始数据")
-        _write_ivd_customer_source_sheets(writer, ivd_sheets)
-        dedup_detail_df.to_excel(writer, index=False, sheet_name="MCC热线客户去重明细")
+        if include_source_sheets:
+            mcc_df.to_excel(writer, index=False, sheet_name="MCC热线原始数据")
+            video_df.to_excel(writer, index=False, sheet_name="视频工单原始数据")
+            msp_df.to_excel(writer, index=False, sheet_name="MSP工单原始数据")
+            _write_ivd_customer_source_sheets(writer, ivd_sheets)
+            dedup_detail_df.to_excel(writer, index=False, sheet_name="MCC热线客户去重明细")
         hotline_title_row = 1
         hotline_header_row = 2
         hotline_startrow = hotline_header_row - 1
@@ -2925,6 +2930,7 @@ def process_online_business_excels(
             "latest_year_combined_coverage_customer_total": int(latest_combined_result["视频+热线覆盖客户数量"]),
             "latest_year_combined_jc_customer_total": int(latest_combined_result["视频+热线覆盖（JC+社办）客户数量"]),
             "dedup_customer_total": int(len(dedup_detail_df)),
+            "include_source_sheets": include_source_sheets,
         },
         "preview": _make_preview(result_df),
     }
@@ -2989,6 +2995,7 @@ def process_online_business_files(
     video_file: UploadFile = File(...),
     msp_file: UploadFile = File(...),
     ivd_customer_file: UploadFile = File(...),
+    include_source_sheets: bool = Form(False),
 ) -> dict[str, Any]:
     _require_feature(FEATURES["ONLINE_SERVICE_TARGET"])
     return process_online_business_excels(
@@ -2996,6 +3003,7 @@ def process_online_business_files(
         video_file=video_file,
         msp_file=msp_file,
         ivd_customer_file=ivd_customer_file,
+        include_source_sheets=include_source_sheets,
     )
 
 
@@ -3007,6 +3015,7 @@ def process_online_assessment_files(
     mcc_ticket_file: UploadFile = File(...),
     crm_video_file: UploadFile = File(...),
     quality_file: UploadFile = File(...),
+    include_source_sheets: bool = Form(False),
 ) -> dict[str, Any]:
     _require_feature(FEATURES["ONLINE_SERVICE_KPI"])
     return process_online_assessment_excels(
@@ -3016,6 +3025,7 @@ def process_online_assessment_files(
         mcc_ticket_file=mcc_ticket_file,
         crm_video_file=crm_video_file,
         quality_file=quality_file,
+        include_source_sheets=include_source_sheets,
     )
 
 

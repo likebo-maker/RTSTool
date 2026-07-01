@@ -4,6 +4,7 @@ const STORE_NAME = 'toolDatasets';
 const LOCAL_STORAGE_PREFIX = 'tsep-tool-dataset:';
 
 let dbPromise = null;
+const sessionDatasetCache = new Map();
 
 export const LOCAL_DATASET_KEYS = {
   TIMEOUT_TICKETS: 'timeout_tickets',
@@ -19,6 +20,7 @@ export async function saveToolDataset(toolKey, payload) {
     payload,
     updatedAt: new Date().toISOString()
   };
+  sessionDatasetCache.set(toolKey, record);
 
   try {
     const db = await openDatasetDb();
@@ -31,13 +33,16 @@ export async function saveToolDataset(toolKey, payload) {
 }
 
 export async function loadToolDataset(toolKey) {
+  const sessionRecord = sessionDatasetCache.get(toolKey);
+  if (sessionRecord) return sessionRecord;
+
   try {
     const db = await openDatasetDb();
     const record = await runStoreRequest('readonly', (store) => store.get(toolKey));
-    return record || loadDatasetFromLocalStorage(toolKey);
+    return rememberLoadedDataset(toolKey, record || loadDatasetFromLocalStorage(toolKey));
   } catch (error) {
     console.warn(`IndexedDB 读取失败，尝试 localStorage：${toolKey}`, error);
-    return loadDatasetFromLocalStorage(toolKey);
+    return rememberLoadedDataset(toolKey, loadDatasetFromLocalStorage(toolKey));
   }
 }
 
@@ -92,4 +97,11 @@ function loadDatasetFromLocalStorage(toolKey) {
     console.warn(`localStorage 读取失败：${toolKey}`, error);
     return null;
   }
+}
+
+function rememberLoadedDataset(toolKey, record) {
+  if (record) {
+    sessionDatasetCache.set(toolKey, record);
+  }
+  return record;
 }

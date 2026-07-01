@@ -39,6 +39,7 @@
       :can-process="canProcess"
       :can-download="Boolean(downloadUrl)"
       :is-processing="isProcessing"
+      :is-download-busy="isDownloadBusy"
       :progress="progress"
       :result-state="resultState"
       :message="resultMessage"
@@ -51,19 +52,35 @@
 
     <StatsGrid :stats="stats" />
     <PreviewTable :preview="preview" />
+    <BlockingOperationModal
+      :visible="downloadFeedback.visible"
+      :title="downloadFeedback.title"
+      :message="downloadFeedback.message"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watchEffect } from 'vue';
+import { computed, onMounted, reactive, ref, watchEffect } from 'vue';
 import { FileCheck2, FileSpreadsheet, TimerReset } from 'lucide-vue-next';
 import ActionPanel from '../components/ActionPanel.vue';
+import BlockingOperationModal from '../components/BlockingOperationModal.vue';
 import FileUploadCard from '../components/FileUploadCard.vue';
 import PreviewTable from '../components/PreviewTable.vue';
 import StatsGrid from '../components/StatsGrid.vue';
 import ToolHeader from '../components/ToolHeader.vue';
 import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
+import {
+  completeProcessTask,
+  failProcessTask,
+  getProcessTask,
+  PROCESS_TASK_KEYS,
+  resetProcessTask,
+  startProcessTask,
+  updateProcessTask
+} from '../services/processTaskStore';
 import { downloadResult, processTimeoutTickets } from '../services/ticketToolService';
+import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
 defineProps({
   canExportExcel: {
@@ -73,17 +90,25 @@ defineProps({
 });
 
 const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
+const taskKey = PROCESS_TASK_KEYS.TIMEOUT_TICKETS;
+const processTask = getProcessTask(taskKey);
 
 const workOrderFile = ref(null);
 const qualityFile = ref(null);
-const isProcessing = ref(false);
-const progress = ref(0);
-const resultState = ref('idle');
-const resultMessage = ref('等待上传两个文件');
-const downloadUrl = ref('');
-const stats = ref(null);
-const preview = ref(null);
+const isDownloadBusy = ref(false);
+const downloadFeedback = reactive({
+  visible: false,
+  title: '',
+  message: ''
+});
 
+const isProcessing = computed(() => processTask.status === 'processing');
+const progress = computed(() => processTask.progress || 0);
+const resultState = computed(() => processTask.resultState || 'idle');
+const resultMessage = computed(() => processTask.message || '等待上传两个文件');
+const downloadUrl = computed(() => processTask.downloadUrl || '');
+const stats = computed(() => processTask.stats || null);
+const preview = computed(() => processTask.preview || null);
 const canProcess = computed(() => Boolean(workOrderFile.value && qualityFile.value && !isProcessing.value));
 
 const statusText = computed(() => {
@@ -111,24 +136,22 @@ function setQualityFile(file) {
 }
 
 function resetResult() {
-  progress.value = 0;
-  resultState.value = 'idle';
-  resultMessage.value = '等待执行处理';
-  downloadUrl.value = '';
-  stats.value = null;
-  preview.value = null;
+  resetProcessTask(taskKey, {
+    message: '等待执行处理'
+  });
 }
 
 async function processFiles() {
   if (!canProcess.value) return;
 
-  isProcessing.value = true;
-  progress.value = 8;
-  resultState.value = 'processing';
-  resultMessage.value = '正在上传文件';
-  downloadUrl.value = '';
-  stats.value = null;
-  preview.value = null;
+  startProcessTask(taskKey, {
+    progress: 8,
+    message: '正在上传文件',
+    inputs: {
+      workOrderFile: workOrderFile.value,
+      qualityFile: qualityFile.value
+    }
+  });
   emit('log', '开始上传并处理工单数据');
 
   try {
@@ -136,53 +159,78 @@ async function processFiles() {
       workOrderFile: workOrderFile.value,
       qualityFile: qualityFile.value,
       onUploadProgress: (uploadProgress) => {
-        progress.value = Math.max(8, uploadProgress);
+        updateProcessTask(taskKey, { progress: Math.max(8, uploadProgress) });
       },
       onHeadersReceived: () => {
-        progress.value = Math.max(progress.value, 64);
-        resultMessage.value = '后端正在筛选 IVD 工单并对比质量上升报表';
+        updateProcessTask(taskKey, {
+          progress: Math.max(processTask.progress, 64),
+          message: '后端正在筛选 IVD 工单并对比质量上升报表'
+        });
       }
     });
 
-    progress.value = 100;
-    resultState.value = 'success';
-    resultMessage.value = '导出成功，最终表格已生成';
-    downloadUrl.value = payload.download_url || '';
-    stats.value = payload.stats || null;
-    preview.value = payload.preview || null;
+    completeProcessTask(taskKey, {
+      message: '导出成功，最终表格已生成',
+      downloadUrl: payload.download_url || '',
+      stats: payload.stats || null,
+      preview: payload.preview || null
+    });
     await saveToolDataset(LOCAL_DATASET_KEYS.TIMEOUT_TICKETS, {
-      resultState: resultState.value,
-      resultMessage: resultMessage.value,
-      downloadUrl: downloadUrl.value,
-      stats: stats.value,
-      preview: preview.value
+      resultState: processTask.resultState,
+      resultMessage: processTask.message,
+      downloadUrl: processTask.downloadUrl,
+      stats: processTask.stats,
+      preview: processTask.preview
     });
     emit('log', `处理完成，最终导出 ${payload.stats?.result_total ?? 0} 条`);
   } catch (error) {
-    progress.value = 0;
-    resultState.value = 'error';
-    resultMessage.value = error.message || '导出失败，请检查 Excel 表头与文件内容';
-    emit('log', resultMessage.value);
-  } finally {
-    isProcessing.value = false;
+    const message = error.message || '导出失败，请检查 Excel 表头与文件内容';
+    failProcessTask(taskKey, message);
+    emit('log', message);
   }
 }
 
-function download() {
-  downloadResult(downloadUrl.value);
-  emit('log', '已触发最终表格下载');
+async function download() {
+  if (!downloadUrl.value || isDownloadBusy.value) return;
+  isDownloadBusy.value = true;
+  downloadFeedback.visible = true;
+  downloadFeedback.title = '正在下载最终表格';
+  downloadFeedback.message = '系统正在准备筛选结果文件，请不要重复点击下载按钮。';
+  try {
+    await runWithMinimumVisibleTime(async () => {
+      await downloadResult(downloadUrl.value);
+      emit('log', '已触发最终表格下载');
+    });
+  } catch (error) {
+    emit('log', error.message || '最终表格下载失败');
+  } finally {
+    downloadFeedback.visible = false;
+    isDownloadBusy.value = false;
+  }
 }
 
 async function loadLastDataset() {
+  if (processTask.inputs?.workOrderFile) {
+    workOrderFile.value = processTask.inputs.workOrderFile;
+  }
+  if (processTask.inputs?.qualityFile) {
+    qualityFile.value = processTask.inputs.qualityFile;
+  }
+  if (processTask.status !== 'idle') {
+    emit('log', processTask.status === 'processing' ? '已接续正在处理的超时工单筛选任务' : '已恢复本次超时工单筛选结果');
+    return;
+  }
+
   const record = await loadToolDataset(LOCAL_DATASET_KEYS.TIMEOUT_TICKETS);
   const payload = record?.payload;
   if (!payload) return;
-  progress.value = 100;
-  resultState.value = payload.resultState || 'success';
-  resultMessage.value = payload.resultMessage || '已加载上次处理结果';
-  downloadUrl.value = payload.downloadUrl || '';
-  stats.value = payload.stats || null;
-  preview.value = payload.preview || null;
+  completeProcessTask(taskKey, {
+    resultState: payload.resultState || 'success',
+    message: payload.resultMessage || '已加载上次处理结果',
+    downloadUrl: payload.downloadUrl || '',
+    stats: payload.stats || null,
+    preview: payload.preview || null
+  });
   emit('log', '已加载上次超时工单筛选结果');
 }
 </script>

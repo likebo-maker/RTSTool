@@ -1,0 +1,43 @@
+{
+  "machine_code": "FB12-831D-DE54-1A42",
+  "license_user": "1",
+  "department": "1",
+  "expire_date": "2099-12-31",
+  "version": "PRO",
+  "features": {
+    "admin": true,
+    "ai_assistant": true,
+    "elearning_data": true,
+    "export_excel": true,
+    "export_pdf": true,
+    "online_service_kpi": true,
+    "online_service_target": true,
+    "qualification_map": true,
+    "timeout_filter": true,
+    "training_map": true
+  },
+  "license_code": "RTS-LIC-eyJwYXlsb2FkIjp7Im1hY2hpbmVfY29kZSI6IkZCMTItODMxRC1ERTU0LTFBNDIiLCJsaWNlbnNlX3VzZXIiOiIxIiwiZGVwYXJ0bWVudCI6IjEiLCJleHBpcmVfZGF0ZSI6IjIwOTktMTItMzEiLCJ2ZXJzaW9uIjoiUFJPIiwiZmVhdHVyZXMiOnsidGltZW91dF9maWx0ZXIiOnRydWUsIm9ubGluZV9zZXJ2aWNlX3RhcmdldCI6dHJ1ZSwib25saW5lX3NlcnZpY2Vfa3BpIjp0cnVlLCJxdWFsaWZpY2F0aW9uX21hcCI6dHJ1ZSwidHJhaW5pbmdfbWFwIjp0cnVlLCJlbGVhcm5pbmdfZGF0YSI6dHJ1ZSwiZXhwb3J0X2V4Y2VsIjp0cnVlLCJleHBvcnRfcGRmIjp0cnVlLCJhaV9hc3Npc3RhbnQiOnRydWUsImFkbWluIjp0cnVlfSwiY3JlYXRlZF9hdCI6IjIwMjYtMDctMDEifSwic2lnbmF0dXJlIjoiZEFaYnRhaXRDMnZ1ZWdBaFdCb00zcFBVVXdSWnlXczYxeVo0UU9CY0s0TTh6VkxGVnpwNVd5S1Rlc014ZnVLeUp4N0YwV0p1YW5XeVpZU3pnOWE0MXB5TzVVWG9hR0Yyci1iSFpyQkgtRDA3bDVMaUtERktzTTFkYkdIMTJrYXBSMVJ3THJxTWE3akpOX3dYcGtCRXA0RkhmZVBwQ2htQTB3VVRyN3ljRXB0VGIxYXYzYllJTGJSUzF4WDgxbVF6UWxRaUdLNHBKMDc2WS1YQ0JSSjBMQ2lqeWttbFFRMmtWOUJUZk1ycTRCR3JwQXVTa0x5M2tuZWVZSFFEUlBRR29aMXF3ckpGOTRJMEhqMHAzbTY3eUJERmZtZVlLS1BDYl9GdlpUeTNleVZmNVRpVVNiOXRRSElaYkxldnI0T0VmV2tWbG9CdURhMWhCSDg0bF94V0NnIn0",
+  "payload": {
+    "machine_code": "FB12-831D-DE54-1A42",
+    "license_user": "1",
+    "department": "1",
+    "expire_date": "2099-12-31",
+    "version": "PRO",
+    "features": {
+      "timeout_filter": true,
+      "online_service_target": true,
+      "online_service_kpi": true,
+      "qualification_map": true,
+      "training_map": true,
+      "elearning_data": true,
+      "export_excel": true,
+      "export_pdf": true,
+      "ai_assistant": true,
+      "admin": true
+    },
+    "created_at": "2026-07-01"
+  },
+  "signature": "dAZbtaitC2vuegAhWBoM3pPUUwRZyWs61yZ4QOBcK4M8zVLFVzp5WyKTesMxfuKyJx7F0WJuanWyZYSzg9a41pyO5UXoaGF2r-bHZrBH-D07l5LiKDFKsM1dbGH12kapR1RwLrqMa7jJN_wXpkBEp4FHfePpChmA0wUTr7ycEptTb1av3bYILbRS1xX81mQzQlQiGK4pJ076Y-XCBRJ0LCijykmlQQ2kV9BTfMrq4BGrpAuSkLy3kneeYHQDRPQGoZ1qwrJF94I0Hj0p3m67yBDFfmeYKKPCb_FvZTy3eyVf5TiUSb9tQHIZbLevr4OEfWkVloBuDa1hBH84l_xWCg",
+  "status": "active",
+  "activated_at": "2026-07-01 15:48:04"
+}

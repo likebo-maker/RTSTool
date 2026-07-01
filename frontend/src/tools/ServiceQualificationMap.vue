@@ -28,11 +28,12 @@
           class="ghost-button"
           :class="{ locked: !canExportExcel }"
           type="button"
-          :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecords.length)"
           :title="!canExportExcel ? '当前授权未开放该功能' : ''"
           @click="exportCurrentResult"
         >
-          <Download :size="18" />
+          <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="18" />
+          <Download v-else :size="18" />
           <span>导出当前结果</span>
         </button>
         <button class="ghost-button" type="button" :disabled="interactionDisabled" @click="resetFilters">
@@ -127,6 +128,7 @@
       <QualificationAmap
         :points="dashboard.mapPoints"
         :loading="loading"
+        :active="props.active"
         :selected-branch="selectedBranch"
         :selected-regions="appliedFilters.regions"
         :empty-text="emptyStateText"
@@ -211,6 +213,7 @@
                 kicker="Product Line"
                 :option="productLineBarOption"
                 :loading="loading"
+                :active="props.active"
                 height="248px"
                 :empty-text="emptyStateText"
                 panelless
@@ -221,6 +224,7 @@
                   kicker="Qualification Type"
                   :option="qualificationTypeBarOption"
                   :loading="loading"
+                  :active="props.active"
                   height="212px"
                   :empty-text="'暂无资质类型分布数据'"
                   panelless
@@ -230,6 +234,7 @@
                   kicker="Expiry Analysis"
                   :option="expiryTrendOption"
                   :loading="loading"
+                  :active="props.active"
                   height="212px"
                   :empty-text="'暂无到期风险数据'"
                   panelless
@@ -321,6 +326,7 @@
               title="产品线分布"
               kicker="Branch Product Line"
               :option="branchProductLineOption"
+              :active="props.active"
               height="220px"
               :empty-text="'暂无产品线分布数据'"
             />
@@ -328,6 +334,7 @@
               title="资质类型分布"
               kicker="Branch Type Mix"
               :option="branchTypeOption"
+              :active="props.active"
               height="220px"
               :empty-text="'暂无资质类型分布数据'"
             />
@@ -335,6 +342,7 @@
               title="到期风险分布"
               kicker="Branch Risk"
               :option="branchRiskOption"
+              :active="props.active"
               height="220px"
               :empty-text="'暂无风险分布数据'"
             />
@@ -350,10 +358,12 @@
                 class="ghost-button"
                 :class="{ locked: !canExportExcel }"
                 type="button"
+                :disabled="Boolean(activeExportKey) || (canExportExcel && !filteredBranchRows.length)"
                 :title="!canExportExcel ? '当前授权未开放该功能' : ''"
                 @click="exportBranchDetail"
               >
-                <Download :size="17" />
+                <LoaderCircle v-if="activeExportKey === 'branch'" class="spin" :size="17" />
+                <Download v-else :size="17" />
                 <span>导出当前分公司明细</span>
               </button>
             </div>
@@ -415,11 +425,24 @@
       @retry="retryImport"
       @close="closeImportOverlay"
     />
+    <BlockingOperationModal
+      :visible="exportFeedback.visible"
+      :title="exportFeedback.title"
+      :message="exportFeedback.message"
+    />
+    <Transition name="disclaimer-fade">
+      <div v-if="viewBusy" class="qualification-view-overlay">
+        <div class="qualification-view-overlay-card">
+          <LoaderCircle class="spin" :size="28" />
+          <strong>{{ viewBusyMessage }}</strong>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watchEffect } from 'vue';
+import { computed, markRaw, nextTick, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue';
 import {
   AlertTriangle,
   CalendarClock,
@@ -427,6 +450,7 @@ import {
   Download,
   Eraser,
   ListOrdered,
+  LoaderCircle,
   Map,
   RotateCcw,
   Search,
@@ -438,6 +462,7 @@ import {
   WalletCards,
   X
 } from 'lucide-vue-next';
+import BlockingOperationModal from '../components/BlockingOperationModal.vue';
 import EChartPanel from '../components/EChartPanel.vue';
 import QualificationAmap from '../components/QualificationAmap.vue';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
@@ -451,9 +476,14 @@ import {
 } from '../utils/qualificationAggregator';
 import { exportBranchQualificationRecords, exportQualificationRecords } from '../utils/qualificationExport';
 import { parseQualificationFiles } from '../utils/qualificationParser';
+import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
 const props = defineProps({
   canExportExcel: {
+    type: Boolean,
+    default: true
+  },
+  active: {
     type: Boolean,
     default: true
   }
@@ -463,7 +493,9 @@ const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
 
 const fileInputRef = ref(null);
 const loading = ref(false);
-const importedRecords = ref([]);
+const restoringView = ref(false);
+const reactivatingView = ref(false);
+const importedRecords = shallowRef([]);
 const importWarnings = ref([]);
 const selectedBranch = ref('');
 const detailKeyword = ref('');
@@ -471,6 +503,12 @@ const detailStatus = ref('全部');
 const activeSideTab = ref('branch');
 const detailTableExpanded = ref(false);
 const importOverlay = reactive(createImportOverlayState());
+const activeExportKey = ref('');
+const exportFeedback = reactive({
+  visible: false,
+  title: '',
+  message: ''
+});
 
 const draftFilters = reactive(createDefaultFilters());
 const appliedFilters = ref(createDefaultFilters());
@@ -499,6 +537,12 @@ const dataStatusText = computed(() => {
   if (!hasData.value) return '待导入资质数据';
   return `已导入 ${importedRecords.value.length.toLocaleString()} 条资质记录`;
 });
+const viewBusy = computed(() => restoringView.value || reactivatingView.value);
+const viewBusyMessage = computed(() => (
+  restoringView.value
+    ? '正在恢复上次资质地图数据，请稍候...'
+    : '正在刷新地图和图表，请稍候...'
+));
 const sideTabs = [
   { key: 'branch', label: '分公司TOP10' },
   { key: 'risk', label: '风险TOP10' },
@@ -549,12 +593,25 @@ const branchTypeOption = computed(() => buildDonutOption(branchDetail.value.qual
 const branchRiskOption = computed(() => buildTrendOption(branchDetail.value.expiryDistribution || []));
 
 watchEffect(() => {
+  if (!props.active) return;
   if (loading.value) {
     emit('status-change', '资质地图数据处理中');
     return;
   }
   emit('status-change', hasData.value ? `资质地图就绪，当前 ${dashboard.value.filteredRecords.length} 条` : '中国区人员服务资质地图待导入数据');
 });
+
+watch(
+  () => props.active,
+  async (isActive, wasActive) => {
+    if (!isActive || wasActive !== false || !hasData.value) return;
+    reactivatingView.value = true;
+    await nextTick();
+    window.setTimeout(() => {
+      reactivatingView.value = false;
+    }, 260);
+  }
+);
 
 onMounted(loadLastDataset);
 
@@ -578,7 +635,7 @@ async function handleFileImport(event) {
       onProgress: handleImportProgress
     });
     updateImportOverlayStep('generate', 'processing', 90, '正在生成分公司地图点位...');
-    importedRecords.value = payload.records;
+    importedRecords.value = markRaw(payload.records || []);
     importWarnings.value = payload.warnings || [];
     Object.assign(draftFilters, createDefaultFilters());
     appliedFilters.value = createDefaultFilters();
@@ -628,13 +685,35 @@ function resetFilters() {
   emit('log', '已重置资质地图筛选条件');
 }
 
-function exportCurrentResult() {
+async function runExportFeedback(key, title, message, action) {
+  if (activeExportKey.value) return;
+  activeExportKey.value = key;
+  exportFeedback.visible = true;
+  exportFeedback.title = title;
+  exportFeedback.message = message;
+  try {
+    await runWithMinimumVisibleTime(action);
+  } finally {
+    exportFeedback.visible = false;
+    activeExportKey.value = '';
+  }
+}
+
+async function exportCurrentResult() {
   if (!props.canExportExcel) {
     emit('feature-blocked', 'Excel导出');
     return;
   }
-  exportQualificationRecords(dashboard.value.filteredRecords);
-  emit('log', `已导出当前资质结果，共 ${dashboard.value.filteredRecords.length} 条`);
+  if (!dashboard.value.filteredRecords.length || activeExportKey.value) return;
+  await runExportFeedback(
+    'current',
+    '正在导出当前结果',
+    '系统正在生成资质筛选结果 Excel，请不要重复点击导出按钮。',
+    () => {
+      exportQualificationRecords(dashboard.value.filteredRecords);
+      emit('log', `已导出当前资质结果，共 ${dashboard.value.filteredRecords.length} 条`);
+    }
+  );
 }
 
 function openBranchDetail(branch) {
@@ -647,14 +726,21 @@ function closeBranchDetail() {
   selectedBranch.value = '';
 }
 
-function exportBranchDetail() {
+async function exportBranchDetail() {
   if (!props.canExportExcel) {
     emit('feature-blocked', 'Excel导出');
     return;
   }
-  if (!branchDetail.value.branchStat) return;
-  exportBranchQualificationRecords(branchDetail.value.branchStat.branch, filteredBranchRows.value);
-  emit('log', `已导出 ${branchDetail.value.branchStat.branch} 分公司资质明细`);
+  if (!branchDetail.value.branchStat || !filteredBranchRows.value.length || activeExportKey.value) return;
+  await runExportFeedback(
+    'branch',
+    '正在导出分公司明细',
+    `系统正在生成 ${branchDetail.value.branchStat.branch} 资质明细 Excel，请不要重复点击导出按钮。`,
+    () => {
+      exportBranchQualificationRecords(branchDetail.value.branchStat.branch, filteredBranchRows.value);
+      emit('log', `已导出 ${branchDetail.value.branchStat.branch} 分公司资质明细`);
+    }
+  );
 }
 
 function statusClass(status) {
@@ -961,16 +1047,32 @@ function closeImportOverlay() {
 }
 
 async function loadLastDataset() {
+  restoringView.value = true;
+  await waitForPaint();
   const record = await loadToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP);
   const payload = record?.payload;
-  if (!payload?.records?.length) return;
-  importedRecords.value = payload.records;
+  if (!payload?.records?.length) {
+    restoringView.value = false;
+    return;
+  }
+  importedRecords.value = markRaw(payload.records || []);
   importWarnings.value = payload.warnings || [];
   Object.assign(draftFilters, createDefaultFilters());
   appliedFilters.value = createDefaultFilters();
   selectedBranch.value = '';
   detailKeyword.value = '';
   detailStatus.value = '全部';
+  await nextTick();
+  window.setTimeout(() => {
+    restoringView.value = false;
+  }, 260);
   emit('log', `已加载上次资质地图数据，共 ${importedRecords.value.length} 条`);
+}
+
+async function waitForPaint() {
+  await nextTick();
+  await new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
 }
 </script>

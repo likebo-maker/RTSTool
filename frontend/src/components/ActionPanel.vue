@@ -5,9 +5,12 @@
         <p class="section-kicker">Process Control</p>
         <h2>操作控制</h2>
       </div>
-      <div class="status-pill" :class="resultState">
-        <span class="status-dot" :class="{ active: isProcessing }"></span>
-        <span>{{ statusText }}</span>
+      <div class="panel-actions">
+        <slot name="header-actions"></slot>
+        <div class="status-pill" :class="resultState">
+          <span class="status-dot" :class="{ active: isProcessing }"></span>
+          <span>{{ statusText }}</span>
+        </div>
       </div>
     </div>
 
@@ -20,12 +23,13 @@
       <button
         class="ghost-button"
         :class="{ locked: downloadLocked }"
-        :disabled="!downloadLocked && (!canDownload || isProcessing)"
+        :disabled="!downloadLocked && (!canDownload || isProcessing || isDownloadBusy)"
         :title="downloadLocked ? lockedTitle : ''"
         type="button"
         @click="handleDownloadClick"
       >
-        <Download :size="18" />
+        <LoaderCircle v-if="isDownloadBusy" class="spin" :size="18" />
+        <Download v-else :size="18" />
         <span>{{ downloadLabel }}</span>
       </button>
     </div>
@@ -98,6 +102,10 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  isDownloadBusy: {
+    type: Boolean,
+    default: false
+  },
   lockedTitle: {
     type: String,
     default: '当前授权未开放该功能'
@@ -107,6 +115,7 @@ const props = defineProps({
 const emit = defineEmits(['process', 'download', 'locked-download']);
 
 function handleDownloadClick() {
+  if (props.isDownloadBusy) return;
   if (props.downloadLocked) {
     emit('locked-download');
     return;

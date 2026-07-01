@@ -35,7 +35,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as echarts from 'echarts';
 import { ChartNoAxesCombined, LoaderCircle } from 'lucide-vue-next';
 
@@ -63,6 +63,10 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  active: {
+    type: Boolean,
+    default: true
   },
   panelless: {
     type: Boolean,
@@ -101,6 +105,16 @@ watch(
   () => props.loading,
   () => {
     renderChart();
+  }
+);
+
+watch(
+  () => props.active,
+  async (isActive) => {
+    if (!isActive) return;
+    await nextTick();
+    renderChart();
+    chartInstance?.resize();
   }
 );
 

@@ -28,11 +28,12 @@
           class="ghost-button"
           :class="{ locked: !canExportExcel }"
           type="button"
-          :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecords.length)"
           :title="!canExportExcel ? '当前授权未开放该功能' : ''"
           @click="exportCurrentResult"
         >
-          <Download :size="18" />
+          <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="18" />
+          <Download v-else :size="18" />
           <span>导出当前结果</span>
         </button>
         <button class="ghost-button" type="button" :disabled="interactionDisabled" @click="resetFilters">
@@ -339,10 +340,12 @@
                 class="ghost-button"
                 :class="{ locked: !canExportExcel }"
                 type="button"
+                :disabled="Boolean(activeExportKey) || (canExportExcel && !filteredBranchRows.length)"
                 :title="!canExportExcel ? '当前授权未开放该功能' : ''"
                 @click="exportBranchDetail"
               >
-                <Download :size="17" />
+                <LoaderCircle v-if="activeExportKey === 'branch'" class="spin" :size="17" />
+                <Download v-else :size="17" />
                 <span>导出当前明细</span>
               </button>
             </div>
@@ -416,6 +419,11 @@
       @retry="retryImport"
       @close="closeImportOverlay"
     />
+    <BlockingOperationModal
+      :visible="exportFeedback.visible"
+      :title="exportFeedback.title"
+      :message="exportFeedback.message"
+    />
   </div>
 </template>
 
@@ -429,6 +437,7 @@ import {
   Download,
   Eraser,
   ListOrdered,
+  LoaderCircle,
   MapPinned,
   Presentation,
   RotateCcw,
@@ -440,6 +449,7 @@ import {
   Users,
   X
 } from 'lucide-vue-next';
+import BlockingOperationModal from '../components/BlockingOperationModal.vue';
 import EChartPanel from '../components/EChartPanel.vue';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
@@ -448,6 +458,7 @@ import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../service
 import { buildTrainingBranchDetail, buildTrainingDashboard, collectTrainingOptions, DEFAULT_TRAINING_FILTERS } from '../utils/trainingAggregator';
 import { exportBranchTrainingRecords, exportTrainingRecords } from '../utils/exportTrainingExcel';
 import { parseTrainingFiles } from '../utils/trainingParser';
+import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
 const props = defineProps({
   canExportExcel: {
@@ -471,6 +482,12 @@ const detailStatus = ref('全部');
 const detailTableExpanded = ref(false);
 const trendExpanded = ref(false);
 const importOverlay = reactive(createImportOverlayState());
+const activeExportKey = ref('');
+const exportFeedback = reactive({
+  visible: false,
+  title: '',
+  message: ''
+});
 
 const draftFilters = reactive(createDefaultFilters());
 const appliedFilters = ref(createDefaultFilters());
@@ -627,13 +644,35 @@ function resetFilters() {
   emit('log', '已重置培训覆盖地图筛选条件');
 }
 
-function exportCurrentResult() {
+async function runExportFeedback(key, title, message, action) {
+  if (activeExportKey.value) return;
+  activeExportKey.value = key;
+  exportFeedback.visible = true;
+  exportFeedback.title = title;
+  exportFeedback.message = message;
+  try {
+    await runWithMinimumVisibleTime(action);
+  } finally {
+    exportFeedback.visible = false;
+    activeExportKey.value = '';
+  }
+}
+
+async function exportCurrentResult() {
   if (!props.canExportExcel) {
     emit('feature-blocked', 'Excel导出');
     return;
   }
-  exportTrainingRecords(dashboard.value.filteredRecords);
-  emit('log', `已导出当前培训结果，共 ${dashboard.value.filteredRecords.length} 条`);
+  if (!dashboard.value.filteredRecords.length || activeExportKey.value) return;
+  await runExportFeedback(
+    'current',
+    '正在导出当前结果',
+    '系统正在生成培训覆盖筛选结果 Excel，请不要重复点击导出按钮。',
+    () => {
+      exportTrainingRecords(dashboard.value.filteredRecords);
+      emit('log', `已导出当前培训结果，共 ${dashboard.value.filteredRecords.length} 条`);
+    }
+  );
 }
 
 function openBranchDetail(branch) {
@@ -655,14 +694,21 @@ function closeBranchDetail() {
   selectedDetailScope.value = 'branch';
 }
 
-function exportBranchDetail() {
+async function exportBranchDetail() {
   if (!props.canExportExcel) {
     emit('feature-blocked', 'Excel导出');
     return;
   }
-  if (!branchDetail.value.branchStat) return;
-  exportBranchTrainingRecords(branchDetail.value.branchStat.branch, filteredBranchRows.value);
-  emit('log', `已导出 ${branchDetail.value.branchStat.branch} 培训明细`);
+  if (!branchDetail.value.branchStat || !filteredBranchRows.value.length || activeExportKey.value) return;
+  await runExportFeedback(
+    'branch',
+    '正在导出当前明细',
+    `系统正在生成 ${branchDetail.value.branchStat.branch} 培训明细 Excel，请不要重复点击导出按钮。`,
+    () => {
+      exportBranchTrainingRecords(branchDetail.value.branchStat.branch, filteredBranchRows.value);
+      emit('log', `已导出 ${branchDetail.value.branchStat.branch} 培训明细`);
+    }
+  );
 }
 
 function statusClass(status) {
