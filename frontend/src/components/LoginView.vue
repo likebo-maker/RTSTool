@@ -8,21 +8,16 @@
       <div class="brand-line brand-line-a" aria-hidden="true"></div>
       <div class="brand-line brand-line-b" aria-hidden="true"></div>
       <div class="brand-line brand-line-c" aria-hidden="true"></div>
-      <p class="section-kicker">RTS Technical Support Platform</p>
-      <h1>RTS工程师效率工具箱</h1>
-      <p class="login-brand-desc">面向 RTS 技术支持工程师的一站式效率处理平台</p>
+      <img class="login-brand-logo" :src="brandConfig.logoSymbolTransparent" :alt="brandConfig.appNameCn" />
+      <p class="section-kicker">{{ brandConfig.appNameEn }}</p>
+      <h1>{{ brandConfig.appNameCn }}</h1>
+      <p class="login-brand-desc">{{ brandConfig.tagline }}</p>
+      <div class="login-slogan">{{ brandConfig.slogan }}</div>
+      <p class="login-platform-desc">集工单处理、数据分析、服务资质、<br />培训发展与智能辅助于一体。</p>
       <div class="brand-metrics">
-        <span>
-          <ClipboardList :size="16" />
-          工单处理
-        </span>
-        <span>
-          <DatabaseZap :size="16" />
-          数据清洗
-        </span>
-        <span>
-          <Wrench :size="16" />
-          工程师工具
+        <span v-for="item in capabilityTags" :key="item.label">
+          <component :is="item.icon" :size="16" />
+          {{ item.label }}
         </span>
       </div>
     </section>
@@ -30,12 +25,15 @@
     <section class="login-form-panel">
       <section class="login-card">
         <header class="login-brand">
-          <div class="brand-mark login-logo">RTS</div>
+          <div class="brand-mark login-logo image-logo">
+            <img :src="brandConfig.logoMark" :alt="brandConfig.appShortName" />
+          </div>
           <div>
             <h2>账号登录</h2>
-            <p>RTS Technical Support Platform</p>
+            <p>{{ brandConfig.appNameEn }}</p>
           </div>
         </header>
+        <p class="login-card-hint">请输入账号密码登录平台</p>
 
       <form class="login-form" @submit.prevent="submitLogin">
         <label class="login-field">
@@ -99,12 +97,13 @@
 
         <button class="login-button" type="submit" :disabled="isLoading">
           <LoaderCircle v-if="isLoading" class="spin" :size="18" />
-          <LogIn v-else :size="18" />
-          <span>{{ isLoading ? '登录中' : '登录' }}</span>
+          <ArrowRight v-else :size="18" />
+          <span>{{ isLoading ? '登录中' : '进入平台' }}</span>
         </button>
 
       </form>
       </section>
+      <div class="login-powered">{{ brandConfig.poweredBy }} · Version {{ brandConfig.version }}</div>
     </section>
 
     <SecurityDisclaimerModal
@@ -119,21 +118,34 @@
 <script setup>
 import { ref } from 'vue';
 import {
+  ArrowRight,
+  BarChart3,
   Check,
   ClipboardList,
   DatabaseZap,
   Eye,
   EyeOff,
+  GraduationCap,
   LoaderCircle,
-  LogIn,
-  Wrench
+  MapPinned,
+  ShieldCheck
 } from 'lucide-vue-next';
 import SecurityDisclaimerModal from './SecurityDisclaimerModal.vue';
+import { brandConfig } from '../config/brandConfig';
 
 const emit = defineEmits(['login-success']);
 
 const DISCLAIMER_STORAGE_KEY = 'rts_toolbox_disclaimer_agreed';
 const DISCLAIMER_VERSION = '1.0';
+
+const capabilityTags = [
+  { label: '工单管理', icon: ClipboardList },
+  { label: '数据分析', icon: BarChart3 },
+  { label: '服务资质', icon: MapPinned },
+  { label: '培训发展', icon: GraduationCap },
+  { label: '智能辅助', icon: DatabaseZap },
+  { label: '授权管理', icon: ShieldCheck }
+];
 
 const username = ref('');
 const password = ref('');

@@ -41,22 +41,31 @@ GeJ3R1TlGMx4tbm88l7W9TXrXA==
 -----END PRIVATE KEY-----"""
 
 LICENSE_PREFIX = "RTS-LIC-"
-VALID_FEATURES = [
-    "access_app",
-    "timeout_ticket_filter",
-    "online_business_calculation",
-    "service_qualification_map",
-    "training_coverage_map",
-    "eclass_data",
-]
+FEATURES = {
+    "TIMEOUT_FILTER": "timeout_filter",
+    "ONLINE_SERVICE_TARGET": "online_service_target",
+    "ONLINE_SERVICE_KPI": "online_service_kpi",
+    "QUALIFICATION_MAP": "qualification_map",
+    "TRAINING_MAP": "training_map",
+    "ELEARNING_DATA": "elearning_data",
+    "EXPORT_EXCEL": "export_excel",
+    "EXPORT_PDF": "export_pdf",
+    "AI_ASSISTANT": "ai_assistant",
+    "ADMIN": "admin",
+}
+VALID_FEATURES = list(FEATURES.values())
 VALID_VERSIONS = ["PRO", "TRIAL", "STANDARD", "ENTERPRISE"]
 FEATURE_LABELS = {
-    "access_app": "主程序访问",
-    "timeout_ticket_filter": "超时工单筛选",
-    "online_business_calculation": "在线业务计算",
-    "service_qualification_map": "服务资质地图",
-    "training_coverage_map": "培训覆盖地图",
-    "eclass_data": "E课堂数据处理",
+    FEATURES["TIMEOUT_FILTER"]: "超时工单筛选",
+    FEATURES["ONLINE_SERVICE_TARGET"]: "在线服务项目目标",
+    FEATURES["ONLINE_SERVICE_KPI"]: "在线服务考核指标",
+    FEATURES["QUALIFICATION_MAP"]: "中国区人员服务资质地图",
+    FEATURES["TRAINING_MAP"]: "中国区培训覆盖地图",
+    FEATURES["ELEARNING_DATA"]: "E课堂数据处理",
+    FEATURES["EXPORT_EXCEL"]: "Excel导出",
+    FEATURES["EXPORT_PDF"]: "PDF导出",
+    FEATURES["AI_ASSISTANT"]: "AI助手",
+    FEATURES["ADMIN"]: "管理员权限",
 }
 MACHINE_CODE_PATTERN = re.compile(r"^[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$")
 
@@ -115,13 +124,14 @@ def generate_license(machine: str, user: str, department: str, expire: str, vers
     machine_code = normalize_machine_code(machine)
     features = [item.strip() for item in features if item.strip()]
     validate_inputs(machine_code, user, department, expire, version, features)
+    feature_map = {feature: feature in features for feature in VALID_FEATURES}
     payload = {
         "machine_code": machine_code,
         "license_user": user.strip(),
         "department": department.strip(),
         "expire_date": expire,
         "version": version.upper(),
-        "features": features,
+        "features": feature_map,
         "created_at": date.today().isoformat(),
     }
     private_key = serialization.load_pem_private_key(PRIVATE_KEY_PEM, password=None)

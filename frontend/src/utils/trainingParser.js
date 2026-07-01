@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import dayjs from 'dayjs';
 import { normalizeTrainingResult } from './trainingStatusNormalizer';
 import { normalizeTrainingBranchName, resolveTrainingRegion } from './branchRegionMap';
+import { resolveTrainingCenter } from './trainingCenterMap';
 
 const HEADER_ALIASES = {
   branch: ['区域', '分公司', '所属分公司', '服务区域'],
@@ -10,7 +11,7 @@ const HEADER_ALIASES = {
   trainingYear: ['培训年度', '年度', '年份'],
   trainingMonth: ['培训月份', '月份'],
   trainingResult: ['完成情况', '成绩结果', '培训结果', '是否合格', '状态'],
-  location: ['培训组织方', '培训地点', '培训中心', '组织方', '举办地点'],
+  location: ['培训中心', '举办地点'],
   trainingType: ['培训类型', '课程类型', '培训形式', '课程形式'],
   courseName: ['培训名称', '课程名称'],
   lecturer: ['讲师', '讲师账号/姓名/组织'],
@@ -28,14 +29,6 @@ const HEADER_ALIASES = {
 const NORMALIZED_ALIAS_LOOKUP = Object.fromEntries(
   Object.entries(HEADER_ALIASES).map(([field, aliases]) => [field, aliases.map(normalizeHeaderText)])
 );
-
-const EXCLUDED_TRAINING_BRANCHES = new Set([
-  '国际用户服务部',
-  '生命信息与支持用户服务部',
-  '体外诊断用户服务部',
-  '医学影像用户服务部',
-  '中国区用户服务部'
-]);
 
 export async function parseTrainingFiles(fileList, options = {}) {
   const files = Array.from(fileList || []).filter(Boolean);
@@ -109,13 +102,15 @@ export async function parseTrainingFiles(fileList, options = {}) {
         }
 
         const rawBranch = pickFirstMeaningfulValue(row, columnIndexMap, ['branch']);
-        const branch = normalizeTrainingBranchName(rawBranch);
+        const branch = rawBranch;
+        const normalizedBranch = normalizeTrainingBranchName(rawBranch);
         const mappedRegion = columnIndexMap.region !== undefined
-          ? resolveRegionFallback(readCellValue(row, columnIndexMap.region), branch)
-          : resolveRegionFallback('', branch);
+          ? resolveRegionFallback(readCellValue(row, columnIndexMap.region), normalizedBranch || branch)
+          : resolveRegionFallback('', normalizedBranch || branch);
         const productLine = pickFirstMeaningfulValue(row, columnIndexMap, ['productLine']);
         const trainingType = pickFirstMeaningfulValue(row, columnIndexMap, ['trainingType']) || '未知';
-        const location = pickFirstMeaningfulValue(row, columnIndexMap, ['location', 'trainingPlace', 'organizer']) || '未知';
+        const location = pickFirstMeaningfulValue(row, columnIndexMap, ['trainingPlace', 'location', 'organizer']) || '未知';
+        const trainingCenterMeta = resolveTrainingCenter(location);
         const courseName = pickFirstMeaningfulValue(row, columnIndexMap, ['courseName']) || '未知课程';
         const lecturer = pickFirstMeaningfulValue(row, columnIndexMap, ['lecturer']) || '未知';
         const studentName = pickFirstMeaningfulValue(row, columnIndexMap, ['studentName']);
@@ -129,7 +124,6 @@ export async function parseTrainingFiles(fileList, options = {}) {
         const durationHours = pickFirstMeaningfulValue(row, columnIndexMap, ['durationHours']);
 
         if (!branch && !productLine && !cycle && !trainingType) continue;
-        if (shouldExcludeTrainingBranch(branch)) continue;
 
         const sessionKey = buildTrainingSessionKey({
           batchId,
@@ -143,12 +137,15 @@ export async function parseTrainingFiles(fileList, options = {}) {
         records.push({
           id: `${file.name}-${sheetName}-${rowIndex + 1}`,
           branch: branch || '未匹配分公司',
+          normalizedBranch: normalizedBranch || branch || '未匹配分公司',
           mappedRegion,
           productLine: productLine || '未知',
           trainingCycle: cycle || '未知',
           trainingResult: trainingResultMeta.normalized,
           trainingType,
           trainingLocation: location,
+          trainingCenter: trainingCenterMeta.center,
+          trainingCenterCity: trainingCenterMeta.city,
           organizer: pickFirstMeaningfulValue(row, columnIndexMap, ['organizer']) || location,
           courseName,
           lecturer,
@@ -268,12 +265,6 @@ function formatDateCell(value) {
 
 function isBlankRow(row) {
   return !row?.some((cell) => String(cell ?? '').trim());
-}
-
-function shouldExcludeTrainingBranch(branch) {
-  const normalizedBranch = String(branch || '').trim();
-  if (!normalizedBranch) return false;
-  return EXCLUDED_TRAINING_BRANCHES.has(normalizedBranch);
 }
 
 function normalizeHeaderText(value) {

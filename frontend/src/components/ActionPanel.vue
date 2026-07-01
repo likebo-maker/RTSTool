@@ -17,7 +17,14 @@
         <Play v-else :size="18" />
         <span>{{ isProcessing ? processingLabel : processLabel }}</span>
       </button>
-      <button class="ghost-button" :disabled="!canDownload || isProcessing" type="button" @click="$emit('download')">
+      <button
+        class="ghost-button"
+        :class="{ locked: downloadLocked }"
+        :disabled="!downloadLocked && (!canDownload || isProcessing)"
+        :title="downloadLocked ? lockedTitle : ''"
+        type="button"
+        @click="handleDownloadClick"
+      >
         <Download :size="18" />
         <span>{{ downloadLabel }}</span>
       </button>
@@ -46,7 +53,7 @@
 <script setup>
 import { AlertCircle, CheckCircle, Clock3, Download, LoaderCircle, Play } from 'lucide-vue-next';
 
-defineProps({
+const props = defineProps({
   canProcess: {
     type: Boolean,
     required: true
@@ -86,8 +93,24 @@ defineProps({
   downloadLabel: {
     type: String,
     default: '下载最终表格'
+  },
+  downloadLocked: {
+    type: Boolean,
+    default: false
+  },
+  lockedTitle: {
+    type: String,
+    default: '当前授权未开放该功能'
   }
 });
 
-defineEmits(['process', 'download']);
+const emit = defineEmits(['process', 'download', 'locked-download']);
+
+function handleDownloadClick() {
+  if (props.downloadLocked) {
+    emit('locked-download');
+    return;
+  }
+  emit('download');
+}
 </script>

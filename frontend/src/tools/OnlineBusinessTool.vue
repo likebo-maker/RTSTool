@@ -2,9 +2,9 @@
   <div class="tool-page">
     <ToolHeader
       :icon="Calculator"
-      kicker="ONLINE BUSINESS CALCULATION"
-      title="在线业务计算"
-      description="上传 MCC热线、视频工单、MSP工单、IVD客户群 4 个原始表格，自动计算在线业务指标并生成结果表。"
+      kicker="ONLINE SERVICE PROJECT TARGET"
+      title="在线服务项目目标"
+      description="上传 MCC热线、视频工单、MSP工单、IVD客户群 4 个原始表格，自动计算在线服务项目目标并生成结果表。"
     />
 
     <section class="glass-panel upload-section">
@@ -71,8 +71,10 @@
       process-label="开始计算"
       processing-label="计算中"
       download-label="下载结果表"
+      :download-locked="!canExportExcel"
       @process="processFiles"
       @download="download"
+      @locked-download="emit('feature-blocked', 'Excel导出')"
     />
 
     <PreviewTable
@@ -83,15 +85,23 @@
 </template>
 
 <script setup>
-import { computed, ref, watchEffect } from 'vue';
+import { computed, onMounted, ref, watchEffect } from 'vue';
 import { Calculator, FileSpreadsheet, Headphones, UsersRound, Video } from 'lucide-vue-next';
 import ActionPanel from '../components/ActionPanel.vue';
 import FileUploadCard from '../components/FileUploadCard.vue';
 import PreviewTable from '../components/PreviewTable.vue';
 import ToolHeader from '../components/ToolHeader.vue';
+import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
 import { downloadResult, processOnlineBusiness } from '../services/ticketToolService';
 
-const emit = defineEmits(['status-change', 'log']);
+defineProps({
+  canExportExcel: {
+    type: Boolean,
+    default: true
+  }
+});
+
+const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
 
 const mccFile = ref(null);
 const videoFile = ref(null);
@@ -126,6 +136,8 @@ const missingFileCount = computed(() => {
 watchEffect(() => {
   emit('status-change', statusText.value);
 });
+
+onMounted(loadLastDataset);
 
 function setFile(type, file) {
   const fileMap = {
@@ -186,6 +198,13 @@ async function processFiles() {
     resultMessage.value = `计算完成，可下载结果表${targetYear.value ? `（${targetYear.value}）` : ''}`;
     downloadUrl.value = payload.download_url || '';
     preview.value = payload.preview || null;
+    await saveToolDataset(LOCAL_DATASET_KEYS.ONLINE_SERVICE_TARGET, {
+      resultState: resultState.value,
+      resultMessage: resultMessage.value,
+      downloadUrl: downloadUrl.value,
+      preview: preview.value,
+      targetYear: targetYear.value
+    });
     emit('log', `在线业务计算完成，输出 ${payload.preview?.rows?.length ?? 0} 条预览指标`);
   } catch (error) {
     progress.value = 0;
@@ -199,6 +218,19 @@ async function processFiles() {
 
 function download() {
   downloadResult(downloadUrl.value);
-  emit('log', '已触发在线业务计算结果表下载');
+  emit('log', '已触发在线服务项目目标计算表下载');
+}
+
+async function loadLastDataset() {
+  const record = await loadToolDataset(LOCAL_DATASET_KEYS.ONLINE_SERVICE_TARGET);
+  const payload = record?.payload;
+  if (!payload) return;
+  progress.value = 100;
+  resultState.value = payload.resultState || 'success';
+  resultMessage.value = payload.resultMessage || '已加载上次计算结果';
+  downloadUrl.value = payload.downloadUrl || '';
+  preview.value = payload.preview || null;
+  targetYear.value = payload.targetYear || '';
+  emit('log', '已加载上次在线服务项目目标计算结果');
 }
 </script>

@@ -17,7 +17,7 @@ from license_core import (
 class LicenseGeneratorApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("RTS License Center")
+        self.title("技术支持效率平台 License Center")
         self.geometry("1080x720")
         self.configure(bg="#061427")
         self.feature_vars: dict[str, tk.BooleanVar] = {}
@@ -31,8 +31,8 @@ class LicenseGeneratorApp(tk.Tk):
         header = tk.Frame(self, bg="#0b1d36", height=72, bd=0, highlightthickness=1, highlightbackground="#114a7a")
         header.grid(row=0, column=0, sticky="ew", padx=14, pady=(12, 8))
         header.grid_propagate(False)
-        tk.Label(header, text="RTS License Center", fg="#f3fbff", bg="#0b1d36", font=("Helvetica", 22, "bold")).pack(anchor="w", padx=18, pady=(12, 0))
-        tk.Label(header, text="注册码授权工具｜参考 wechatgroupgrip 机制", fg="#81b9e6", bg="#0b1d36", font=("Helvetica", 10)).pack(anchor="w", padx=18)
+        tk.Label(header, text="技术支持效率平台 License Center", fg="#f3fbff", bg="#0b1d36", font=("Helvetica", 22, "bold")).pack(anchor="w", padx=18, pady=(12, 0))
+        tk.Label(header, text="注册码授权工具｜Powered by RTS Team", fg="#81b9e6", bg="#0b1d36", font=("Helvetica", 10)).pack(anchor="w", padx=18)
 
         body = tk.Frame(self, bg="#061427")
         body.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 12))

@@ -1,12 +1,12 @@
 <template>
   <header class="top-bar">
     <div class="top-title">
-      <div class="logo-orbit">
-        <Activity :size="20" />
+      <div class="logo-orbit image-logo top-logo">
+        <img :src="brandConfig.logoMark" :alt="brandConfig.appShortName" />
       </div>
       <div>
-        <strong>RTS工程师效率工具箱</strong>
-        <span>RTS Technical Support Platform</span>
+        <strong>{{ brandConfig.appNameCn }}</strong>
+        <span>{{ brandConfig.appNameEn }}</span>
       </div>
     </div>
 
@@ -15,6 +15,13 @@
         <ShieldCheck :size="15" />
         <span>{{ licenseSummaryText }}</span>
       </div>
+      <button
+        class="security-entry-button"
+        type="button"
+        @click="$emit('show-license-center')"
+      >
+        授权中心
+      </button>
       <button
         class="security-entry-button"
         type="button"
@@ -32,9 +39,10 @@
 
 <script setup>
 import { computed } from 'vue';
-import { Activity, Moon, ShieldCheck } from 'lucide-vue-next';
+import { Moon, ShieldCheck } from 'lucide-vue-next';
+import { brandConfig } from '../config/brandConfig';
 
-defineEmits(['show-disclaimer']);
+defineEmits(['show-disclaimer', 'show-license-center']);
 
 const props = defineProps({
   licenseInfo: {
@@ -46,6 +54,7 @@ const props = defineProps({
 const licenseSummaryText = computed(() => {
   if (!props.licenseInfo) return '';
   if (props.licenseInfo.enabled === false) return 'macOS 免授权';
+  if (props.licenseInfo.status === 'expired') return '授权已过期';
   if (props.licenseInfo.status !== 'active') return '';
   const user = props.licenseInfo.license_user || '已授权';
   const version = props.licenseInfo.version || '-';
@@ -56,6 +65,9 @@ const licenseDetailText = computed(() => {
   if (!props.licenseInfo) return '';
   if (props.licenseInfo.enabled === false) {
     return '当前设备为 macOS，未启用注册码校验';
+  }
+  if (props.licenseInfo.status === 'expired') {
+    return `授权已过期\n机器码：${props.licenseInfo.machine_code || '-'}`;
   }
   if (props.licenseInfo.status !== 'active') return '';
   return `授权人：${props.licenseInfo.license_user || '-'}\n部门：${props.licenseInfo.department || '-'}\n版本：${props.licenseInfo.version || '-'}\n到期日：${props.licenseInfo.expire_date || '-'}\n剩余天数：${props.licenseInfo.remaining_days ?? '-'} 天`;

@@ -5,9 +5,10 @@
     <div class="login-glow login-glow-b" aria-hidden="true"></div>
 
     <section class="license-guide-panel">
+      <img class="license-guide-logo" :src="brandConfig.logoFull" :alt="brandConfig.appNameCn" />
       <p class="section-kicker">SOFTWARE ACTIVATION</p>
-      <h1>程序授权验证</h1>
-      <p class="login-brand-desc">参考 `wechatgroupgrip` 的注册码机制，当前设备需完成授权后才能进入 RTS 工具箱。</p>
+      <h1>{{ brandConfig.appNameCn }}授权验证</h1>
+      <p class="login-brand-desc">当前设备需完成授权后才能进入{{ brandConfig.appNameCn }}。</p>
 
       <div class="license-flow">
         <div class="license-flow-step">
@@ -34,10 +35,12 @@
     <section class="license-main-panel">
       <section class="login-card license-card-shell">
         <header class="login-brand">
-          <div class="brand-mark login-logo">RTS</div>
+          <div class="brand-mark login-logo image-logo">
+            <img :src="brandConfig.logoMark" :alt="brandConfig.appShortName" />
+          </div>
           <div>
             <h2>授权激活</h2>
-            <p>RTS Toolbox License Center</p>
+            <p>{{ brandConfig.appNameEn }}</p>
           </div>
         </header>
 
@@ -52,11 +55,11 @@
 
         <div class="license-form-card">
           <strong>② 输入注册码</strong>
-          <p>请粘贴管理员提供的注册码，格式示例：`RTS-LIC-...`</p>
+          <p>请粘贴管理员提供的完整注册码。</p>
           <textarea
             v-model.trim="licenseCode"
             class="license-textarea"
-            placeholder="请粘贴 RTS-LIC-... 注册码"
+            placeholder="请粘贴管理员提供的注册码"
             @input="validateInput"
           ></textarea>
           <div class="license-validate" :class="validationTone">{{ validationText }}</div>
@@ -96,6 +99,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue';
+import { brandConfig } from '../config/brandConfig';
 
 const props = defineProps({
   statusInfo: {
@@ -112,10 +116,10 @@ const validationTone = ref('info');
 const errorMessage = ref('');
 const activating = ref(false);
 
-const canActivate = computed(() => /^RTS-LIC-[A-Za-z0-9_-]+$/.test(licenseCode.value));
+const canActivate = computed(() => /^[A-Za-z0-9_-]{16,}$/.test(licenseCode.value));
 const isActive = computed(() => props.statusInfo?.status === 'active');
 const statusMessage = computed(() => {
-  if (isActive.value) return '授权已生效，可以继续使用 RTS 工具箱。';
+  if (isActive.value) return `授权已生效，可以继续使用${brandConfig.appNameCn}。`;
   return props.statusInfo?.message || '请复制机器码并联系管理员获取授权。';
 });
 

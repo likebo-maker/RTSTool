@@ -22,7 +22,7 @@ const props = defineProps({
 const emit = defineEmits(['status-change']);
 
 const title = computed(() => {
-  if (props.toolKey === 'home') return '工具箱首页';
+  if (props.toolKey === 'home') return '平台首页';
   if (props.toolKey === 'eclass-data') return 'E课堂数据处理';
   return '预留工具模块';
 });

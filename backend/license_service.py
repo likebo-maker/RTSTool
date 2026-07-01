@@ -15,9 +15,17 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    CRYPTOGRAPHY_AVAILABLE = True
+except ModuleNotFoundError:
+    InvalidSignature = Exception
+    hashes = None
+    serialization = None
+    padding = None
+    CRYPTOGRAPHY_AVAILABLE = False
 
 
 PUBLIC_KEY_PEM = b"""-----BEGIN PUBLIC KEY-----
@@ -32,13 +40,41 @@ PQIDAQAB
 
 LICENSE_PREFIX = "RTS-LIC-"
 VALID_VERSIONS = {"TRIAL", "STANDARD", "PRO", "ENTERPRISE"}
-ALL_FEATURES = {
-    "access_app",
-    "timeout_ticket_filter",
-    "online_business_calculation",
-    "service_qualification_map",
-    "training_coverage_map",
-    "eclass_data",
+
+FEATURES = {
+    "TIMEOUT_FILTER": "timeout_filter",
+    "ONLINE_SERVICE_TARGET": "online_service_target",
+    "ONLINE_SERVICE_KPI": "online_service_kpi",
+    "QUALIFICATION_MAP": "qualification_map",
+    "TRAINING_MAP": "training_map",
+    "ELEARNING_DATA": "elearning_data",
+    "EXPORT_EXCEL": "export_excel",
+    "EXPORT_PDF": "export_pdf",
+    "AI_ASSISTANT": "ai_assistant",
+    "ADMIN": "admin",
+}
+ALL_FEATURES = set(FEATURES.values())
+BUSINESS_FEATURES = ALL_FEATURES - {FEATURES["ADMIN"]}
+DEFAULT_LEGACY_FEATURES = {FEATURES["TIMEOUT_FILTER"]}
+FEATURE_LABELS = {
+    FEATURES["TIMEOUT_FILTER"]: "超时工单筛选",
+    FEATURES["ONLINE_SERVICE_TARGET"]: "在线服务项目目标",
+    FEATURES["ONLINE_SERVICE_KPI"]: "在线服务考核指标",
+    FEATURES["QUALIFICATION_MAP"]: "中国区人员服务资质地图",
+    FEATURES["TRAINING_MAP"]: "中国区培训覆盖地图",
+    FEATURES["ELEARNING_DATA"]: "E课堂数据处理",
+    FEATURES["EXPORT_EXCEL"]: "Excel导出",
+    FEATURES["EXPORT_PDF"]: "PDF导出",
+    FEATURES["AI_ASSISTANT"]: "AI助手",
+    FEATURES["ADMIN"]: "管理员权限",
+}
+FEATURE_ALIASES = {
+    "access_app": FEATURES["TIMEOUT_FILTER"],
+    "timeout_ticket_filter": FEATURES["TIMEOUT_FILTER"],
+    "online_business_calculation": FEATURES["ONLINE_SERVICE_TARGET"],
+    "service_qualification_map": FEATURES["QUALIFICATION_MAP"],
+    "training_coverage_map": FEATURES["TRAINING_MAP"],
+    "eclass_data": FEATURES["ELEARNING_DATA"],
 }
 
 
@@ -68,6 +104,12 @@ LICENSE_PATH = _data_dir() / "license.json"
 
 def is_license_required() -> bool:
     return sys.platform.startswith("win")
+
+
+def _require_cryptography() -> None:
+    if CRYPTOGRAPHY_AVAILABLE:
+        return
+    raise LicenseError("缺少 cryptography 依赖。Windows 授权校验前请先安装：pip install cryptography", 500)
 
 
 def _run_windows_cmd(command: list[str]) -> str:
@@ -209,6 +251,65 @@ def _canonical_payload(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def normalize_feature_key(feature: str | None) -> str:
+    key = str(feature or "").strip()
+    return FEATURE_ALIASES.get(key, key)
+
+
+def _raw_feature_keys(features: Any) -> set[str]:
+    if isinstance(features, dict):
+        return {normalize_feature_key(key) for key in features if bool(features.get(key))}
+    if isinstance(features, (list, tuple, set)):
+        return {normalize_feature_key(item) for item in features if str(item or "").strip()}
+    return set()
+
+
+def normalize_features(features: Any, *, legacy_default: bool = False, expired: bool = False) -> dict[str, bool]:
+    enabled = set(DEFAULT_LEGACY_FEATURES if legacy_default else set())
+    enabled.update(_raw_feature_keys(features))
+    if FEATURES["ADMIN"] in enabled and not expired:
+        enabled.update(ALL_FEATURES)
+    if expired:
+        enabled = {FEATURES["ADMIN"]} if FEATURES["ADMIN"] in enabled else set()
+    return {feature: feature in enabled for feature in sorted(ALL_FEATURES)}
+
+
+def unknown_feature_keys(features: Any) -> set[str]:
+    if features is None:
+        return set()
+    return _raw_feature_keys(features) - ALL_FEATURES
+
+
+def is_payload_expired(payload: dict[str, Any]) -> bool:
+    try:
+        return date.fromisoformat(str(payload.get("expire_date", ""))) < date.today()
+    except ValueError:
+        return True
+
+
+def has_feature_from_payload(payload: dict[str, Any] | None, feature: str) -> bool:
+    if not payload or is_payload_expired(payload):
+        return False
+    normalized_key = normalize_feature_key(feature)
+    features = normalize_features(payload.get("features"), legacy_default="features" not in payload)
+    return bool(features.get(FEATURES["ADMIN"]) or features.get(normalized_key))
+
+
+def has_feature(feature_key: str) -> bool:
+    if not is_license_required():
+        return True
+    row = current_license()
+    if not row:
+        return False
+    try:
+        payload, signature = parse_license_code(str(row.get("license_code", "")))
+        verify_signature(payload, signature)
+        validate_payload(payload)
+    except LicenseError:
+        return False
+    return has_feature_from_payload(payload, feature_key)
+
+
 def parse_license_code(code: str) -> tuple[dict[str, Any], bytes]:
     cleaned = re.sub(r"\s+", "", code.strip())
     if cleaned.startswith(LICENSE_PREFIX):
@@ -225,6 +326,7 @@ def parse_license_code(code: str) -> tuple[dict[str, Any], bytes]:
 
 
 def verify_signature(payload: dict[str, Any], signature: bytes) -> None:
+    _require_cryptography()
     public_key = serialization.load_pem_public_key(PUBLIC_KEY_PEM)
     try:
         public_key.verify(
@@ -238,7 +340,7 @@ def verify_signature(payload: dict[str, Any], signature: bytes) -> None:
 
 
 def validate_payload(payload: dict[str, Any], *, require_feature: str | None = None) -> None:
-    required = {"machine_code", "license_user", "department", "expire_date", "version", "features", "created_at"}
+    required = {"machine_code", "license_user", "department", "expire_date", "version", "created_at"}
     if not required.issubset(payload):
         raise LicenseError("注册码无效")
     if str(payload["machine_code"]).upper() not in valid_machine_codes():
@@ -251,10 +353,10 @@ def validate_payload(payload: dict[str, Any], *, require_feature: str | None = N
         raise LicenseError("注册码已过期", 403)
     if str(payload["version"]).upper() not in VALID_VERSIONS:
         raise LicenseError("注册码无效")
-    features = set(payload.get("features") or [])
-    if not features.issubset(ALL_FEATURES):
+    bad_features = unknown_feature_keys(payload.get("features")) if "features" in payload else set()
+    if bad_features:
         raise LicenseError("注册码无效")
-    if require_feature and require_feature not in features:
+    if require_feature and not has_feature_from_payload(payload, require_feature):
         raise LicenseError("当前注册码不包含此功能", 403)
 
 
@@ -277,13 +379,14 @@ def activate_license(code: str) -> dict[str, Any]:
     payload, signature = parse_license_code(code)
     verify_signature(payload, signature)
     validate_payload(payload)
+    normalized_features = normalize_features(payload.get("features"), legacy_default="features" not in payload)
     record = {
         "machine_code": payload["machine_code"],
         "license_user": payload["license_user"],
         "department": payload["department"],
         "expire_date": payload["expire_date"],
         "version": str(payload["version"]).upper(),
-        "features": payload.get("features", []),
+        "features": normalized_features,
         "license_code": code.strip(),
         "payload": payload,
         "signature": _b64url(signature),
@@ -298,31 +401,51 @@ def current_license() -> dict[str, Any] | None:
     return _read_license_file()
 
 
-def license_to_info(row: dict[str, Any] | None = None) -> dict[str, Any]:
+def _payload_from_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not row:
+        return None
+    try:
+        payload, _signature = parse_license_code(str(row.get("license_code", "")))
+        return payload
+    except LicenseError:
+        payload = row.get("payload")
+        return payload if isinstance(payload, dict) else None
+
+
+def license_to_info(row: dict[str, Any] | None = None, *, verified_payload: dict[str, Any] | None = None) -> dict[str, Any]:
     machine_code = get_machine_code()
     if not is_license_required():
+        features = {feature: True for feature in sorted(ALL_FEATURES)}
         return {
             "enabled": False,
             "machine_code": machine_code,
-            "features": sorted(ALL_FEATURES),
+            "features": features,
+            "feature_labels": FEATURE_LABELS,
             "status": "active",
             "remaining_days": None,
             "message": "macOS 不启用注册码校验",
         }
     if not row:
-        return {"enabled": True, "machine_code": machine_code, "features": [], "status": "inactive", "remaining_days": None}
+        return {
+            "enabled": True,
+            "machine_code": machine_code,
+            "features": normalize_features(None, expired=True),
+            "feature_labels": FEATURE_LABELS,
+            "status": "inactive",
+            "remaining_days": None,
+        }
 
-    features = row.get("features") or []
+    payload = verified_payload or _payload_from_row(row) or {}
     status = "active"
     remaining_days = None
     try:
-        remaining_days = (date.fromisoformat(str(row.get("expire_date", ""))) - date.today()).days
+        remaining_days = (date.fromisoformat(str(payload.get("expire_date", row.get("expire_date", "")))) - date.today()).days
         if remaining_days < 0:
             status = "expired"
     except Exception:
         status = "invalid"
 
-    registered_machine_code = str(row.get("machine_code", "")).upper()
+    registered_machine_code = str(payload.get("machine_code", row.get("machine_code", ""))).upper()
     message = ""
     if registered_machine_code not in valid_machine_codes():
         status = "mismatch"
@@ -334,16 +457,26 @@ def license_to_info(row: dict[str, Any] | None = None) -> dict[str, Any]:
         message = "注册码已过期，请重新申请授权。"
     elif status == "invalid":
         message = "本地授权信息格式异常，请重新激活。"
+    elif "features" not in payload:
+        message = "当前授权为旧版授权，建议更新授权密钥以开放更多功能。"
+
+    features = normalize_features(
+        payload.get("features"),
+        legacy_default="features" not in payload,
+        expired=status == "expired",
+    )
 
     return {
         "enabled": True,
         "machine_code": machine_code,
         "registered_machine_code": registered_machine_code,
-        "license_user": row.get("license_user", ""),
-        "department": row.get("department", ""),
-        "expire_date": row.get("expire_date", ""),
-        "version": row.get("version", ""),
+        "license_user": payload.get("license_user", row.get("license_user", "")),
+        "department": payload.get("department", row.get("department", "")),
+        "expire_date": payload.get("expire_date", row.get("expire_date", "")),
+        "version": str(payload.get("version", row.get("version", ""))).upper(),
         "features": features,
+        "feature_labels": FEATURE_LABELS,
+        "legacy_license": "features" not in payload,
         "status": status,
         "activated_at": row.get("activated_at", ""),
         "remaining_days": remaining_days,
@@ -360,4 +493,4 @@ def require_valid_license(feature: str | None = None) -> dict[str, Any]:
     payload, signature = parse_license_code(str(row.get("license_code", "")))
     verify_signature(payload, signature)
     validate_payload(payload, require_feature=feature)
-    return license_to_info(row)
+    return license_to_info(row, verified_payload=payload)

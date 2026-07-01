@@ -6,13 +6,13 @@ from license_core import FEATURE_LABELS, VALID_FEATURES, VALID_VERSIONS, generat
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="RTS 工具箱注册码生成器")
+    parser = argparse.ArgumentParser(description="技术支持效率平台注册码生成器")
     parser.add_argument("--machine", required=True, help="机器码")
     parser.add_argument("--user", required=True, help="授权人")
     parser.add_argument("--department", required=True, help="部门")
     parser.add_argument("--expire", required=True, help="到期日期 YYYY-MM-DD")
     parser.add_argument("--version", default="PRO", choices=VALID_VERSIONS)
-    parser.add_argument("--features", nargs="+", default=["access_app"], choices=VALID_FEATURES)
+    parser.add_argument("--features", nargs="+", default=VALID_FEATURES, choices=VALID_FEATURES)
     args = parser.parse_args()
 
     code, payload = generate_license(

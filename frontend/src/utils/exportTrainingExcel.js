@@ -8,6 +8,8 @@ export function exportTrainingRecords(records, fileName = '中国区培训覆盖
     产线: record.productLine,
     培训周期: record.trainingCycle,
     培训组织方: record.organizer,
+    培训中心: record.trainingCenter,
+    培训中心城市: record.trainingCenterCity,
     培训地点: record.trainingLocation,
     培训类型: record.trainingType,
     培训名称: record.courseName,

@@ -24,7 +24,14 @@
           <Upload :size="18" />
           <span>导入培训表</span>
         </button>
-        <button class="ghost-button" type="button" :disabled="interactionDisabled || !dashboard.filteredRecords.length" @click="exportCurrentResult">
+        <button
+          class="ghost-button"
+          :class="{ locked: !canExportExcel }"
+          type="button"
+          :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+          @click="exportCurrentResult"
+        >
           <Download :size="18" />
           <span>导出当前结果</span>
         </button>
@@ -59,7 +66,7 @@
           </select>
         </label>
 
-        <QualificationFilterSelect v-model="draftFilters.locations" label="培训地点" :options="filterOptions.locations" searchable search-placeholder="搜索培训地点" />
+        <QualificationFilterSelect v-model="draftFilters.trainingCenters" label="培训中心" :options="filterOptions.trainingCenters" searchable search-placeholder="搜索培训中心" />
         <QualificationFilterSelect v-model="draftFilters.trainingTypes" label="培训类型" :options="filterOptions.trainingTypes" searchable search-placeholder="搜索培训类型" />
 
         <div class="qualification-filter-actions">
@@ -96,7 +103,7 @@
         :selected-branch="selectedBranch"
         :selected-regions="appliedFilters.regions"
         :empty-text="emptyStateText"
-        @select-branch="openBranchDetail"
+        @select-center="openTrainingCenterDetail"
       />
 
       <aside class="qualification-side-panel">
@@ -137,7 +144,7 @@
                   <span class="rank-index">{{ index + 1 }}</span>
                   <div class="rank-branch-copy">
                     <strong>{{ item.branch }}</strong>
-                    <span>培训人数 {{ item.traineeCount }} / 记录数 {{ item.recordCount }}</span>
+                    <span>培训人次 {{ item.traineeCount }} / 记录数 {{ item.recordCount }}</span>
                   </div>
                 </button>
               </div>
@@ -257,6 +264,7 @@
               <th>产线</th>
               <th>培训周期</th>
               <th>培训组织方</th>
+              <th>培训中心</th>
               <th>培训地点</th>
               <th>培训类型</th>
               <th>培训名称</th>
@@ -273,6 +281,7 @@
               <td>{{ row.productLine }}</td>
               <td>{{ row.trainingCycle }}</td>
               <td>{{ row.organizer }}</td>
+              <td>{{ row.trainingCenter }}</td>
               <td>{{ row.trainingLocation }}</td>
               <td>{{ row.trainingType }}</td>
               <td>{{ row.courseName }}</td>
@@ -298,7 +307,7 @@
         <aside class="qualification-drawer">
           <div class="qualification-drawer-head">
             <div>
-              <p class="section-kicker">Branch Training Detail</p>
+              <p class="section-kicker">Training Detail</p>
               <h2>{{ branchDetail.branchStat.branch }}培训详情</h2>
             </div>
             <button class="icon-button" type="button" @click="closeBranchDetail">
@@ -315,20 +324,26 @@
           </div>
 
           <div class="qualification-drawer-chart-grid">
-            <EChartPanel title="产线培训分布" kicker="Branch Product Line" :option="branchProductLineOption" height="220px" :empty-text="'暂无产线分布数据'" />
-            <EChartPanel title="培训类型分布" kicker="Branch Training Type" :option="branchTypeOption" height="220px" :empty-text="'暂无培训类型数据'" />
-            <EChartPanel title="培训周期趋势" kicker="Branch Training Trend" :option="branchTrendOption" height="220px" :empty-text="'暂无趋势数据'" />
+            <EChartPanel title="产线培训分布" kicker="Product Line" :option="branchProductLineOption" height="220px" :empty-text="'暂无产线分布数据'" />
+            <EChartPanel title="培训类型分布" kicker="Training Type" :option="branchTypeOption" height="220px" :empty-text="'暂无培训类型数据'" />
+            <EChartPanel title="培训周期趋势" kicker="Training Trend" :option="branchTrendOption" height="220px" :empty-text="'暂无趋势数据'" />
           </div>
 
           <section class="glass-panel qualification-drawer-filter">
             <div class="panel-title-row">
               <div>
-                <p class="section-kicker">Branch Detail Table</p>
-                <h2>分公司培训明细</h2>
+                <p class="section-kicker">Detail Table</p>
+                <h2>培训明细</h2>
               </div>
-              <button class="ghost-button" type="button" @click="exportBranchDetail">
+              <button
+                class="ghost-button"
+                :class="{ locked: !canExportExcel }"
+                type="button"
+                :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+                @click="exportBranchDetail"
+              >
                 <Download :size="17" />
-                <span>导出当前分公司明细</span>
+                <span>导出当前明细</span>
               </button>
             </div>
 
@@ -350,6 +365,8 @@
                     <th>产线</th>
                     <th>培训周期</th>
                     <th>培训组织方</th>
+                    <th>培训中心</th>
+                    <th>培训地点</th>
                     <th>培训类型</th>
                     <th>完成情况</th>
                     <th>成绩</th>
@@ -363,6 +380,8 @@
                     <td>{{ row.productLine }}</td>
                     <td>{{ row.trainingCycle }}</td>
                     <td>{{ row.organizer }}</td>
+                    <td>{{ row.trainingCenter }}</td>
+                    <td>{{ row.trainingLocation }}</td>
                     <td>{{ row.trainingType }}</td>
                     <td>
                       <span class="qualification-status-badge" :class="statusClass(row.trainingResult)">
@@ -377,7 +396,7 @@
             </div>
             <div v-else class="empty-preview">
               <TableProperties :size="24" />
-              <span>暂无符合条件的分公司培训明细</span>
+              <span>暂无符合条件的培训明细</span>
             </div>
           </section>
         </aside>
@@ -401,7 +420,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, watchEffect } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watchEffect } from 'vue';
 import {
   AlertTriangle,
   Award,
@@ -425,11 +444,19 @@ import EChartPanel from '../components/EChartPanel.vue';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
 import TrainingCoverageAmap from '../components/TrainingCoverageAmap.vue';
+import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
 import { buildTrainingBranchDetail, buildTrainingDashboard, collectTrainingOptions, DEFAULT_TRAINING_FILTERS } from '../utils/trainingAggregator';
 import { exportBranchTrainingRecords, exportTrainingRecords } from '../utils/exportTrainingExcel';
 import { parseTrainingFiles } from '../utils/trainingParser';
 
-const emit = defineEmits(['status-change', 'log']);
+const props = defineProps({
+  canExportExcel: {
+    type: Boolean,
+    default: true
+  }
+});
+
+const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
 
 const fileInputRef = ref(null);
 const loading = ref(false);
@@ -437,6 +464,7 @@ const importedRecords = ref([]);
 const importWarnings = ref([]);
 const displayMode = ref('training-count');
 const selectedBranch = ref('');
+const selectedDetailScope = ref('branch');
 const activeSideTab = ref('branch');
 const detailKeyword = ref('');
 const detailStatus = ref('全部');
@@ -474,16 +502,16 @@ const sideTabs = [
 ];
 
 const metricCards = computed(() => [
-  { key: 'traineeCount', label: '培训人数', value: dashboard.value.summary.traineeCount, icon: Users, tone: 'blue' },
+  { key: 'traineeCount', label: '培训人次', value: dashboard.value.summary.traineeCount, icon: Users, tone: 'blue' },
   { key: 'recordCount', label: '培训记录数', value: dashboard.value.summary.recordCount, icon: BookOpenCheck, tone: 'cyan' },
-  { key: 'coveredBranchCount', label: '培训覆盖分公司', value: dashboard.value.summary.coveredBranchCount, icon: MapPinned, tone: 'green' },
+  { key: 'sessionCount', label: '培训场次', value: dashboard.value.summary.sessionCount, icon: Presentation, tone: 'green' },
   { key: 'passRate', label: '合格率', value: dashboard.value.summary.passRate, icon: Award, tone: 'green' },
-  { key: 'failCount', label: '不合格人数', value: dashboard.value.summary.failCount, icon: CircleX, tone: 'red' }
+  { key: 'failCount', label: '不合格人次', value: dashboard.value.summary.failCount, icon: CircleX, tone: 'red' }
 ]);
 
 const branchDetail = computed(() => {
   if (!selectedBranch.value) return { branchStat: null, branchRecords: [], fullBranchRecords: [] };
-  return buildTrainingBranchDetail(selectedBranch.value, dashboard.value.filteredRecords);
+  return buildTrainingBranchDetail(selectedBranch.value, dashboard.value.filteredRecords, selectedDetailScope.value);
 });
 
 const filteredBranchRows = computed(() => {
@@ -502,11 +530,11 @@ const branchMetricCards = computed(() => {
   const stat = branchDetail.value.branchStat;
   if (!stat) return [];
   return [
-    { label: '培训人数', value: stat.traineeCount, icon: Users, tone: 'blue' },
+    { label: '培训人次', value: stat.traineeCount, icon: Users, tone: 'blue' },
     { label: '培训记录数', value: stat.recordCount, icon: BookOpenCheck, tone: 'cyan' },
     { label: '培训场次', value: stat.sessionCount, icon: Presentation, tone: 'green' },
     { label: '合格率', value: stat.passRate, icon: UserRoundCheck, tone: 'green' },
-    { label: '不合格人数', value: stat.failCount, icon: CircleX, tone: 'red' }
+    { label: '不合格人次', value: stat.failCount, icon: CircleX, tone: 'red' }
   ];
 });
 
@@ -525,6 +553,8 @@ watchEffect(() => {
   emit('status-change', hasData.value ? `培训覆盖地图就绪，当前 ${dashboard.value.filteredRecords.length} 条` : '中国区培训覆盖地图待导入数据');
 });
 
+onMounted(loadLastDataset);
+
 function openImporter() {
   if (interactionDisabled.value) return;
   fileInputRef.value?.click();
@@ -537,6 +567,7 @@ async function handleFileImport(event) {
   loading.value = true;
   importWarnings.value = [];
   selectedBranch.value = '';
+  selectedDetailScope.value = 'branch';
   prepareImportOverlay();
 
   try {
@@ -547,6 +578,10 @@ async function handleFileImport(event) {
     importWarnings.value = payload.warnings || [];
     Object.assign(draftFilters, createDefaultFilters());
     appliedFilters.value = createDefaultFilters();
+    await saveToolDataset(LOCAL_DATASET_KEYS.TRAINING_COVERAGE_MAP, {
+      records: importedRecords.value,
+      warnings: importWarnings.value
+    });
     await nextTick();
     updateImportOverlayStep('generate', 'completed', 100, '导入完成');
     importOverlay.mode = 'success';
@@ -572,10 +607,11 @@ function applyFilters() {
     productLines: [...draftFilters.productLines],
     cycles: [...draftFilters.cycles],
     result: draftFilters.result,
-    locations: [...draftFilters.locations],
+    trainingCenters: [...draftFilters.trainingCenters],
     trainingTypes: [...draftFilters.trainingTypes]
   };
   selectedBranch.value = '';
+  selectedDetailScope.value = 'branch';
   detailKeyword.value = '';
   detailStatus.value = '全部';
   emit('log', `刷新培训覆盖地图，当前结果 ${dashboard.value.filteredRecords.length} 条`);
@@ -585,30 +621,48 @@ function resetFilters() {
   Object.assign(draftFilters, createDefaultFilters());
   appliedFilters.value = createDefaultFilters();
   selectedBranch.value = '';
+  selectedDetailScope.value = 'branch';
   detailKeyword.value = '';
   detailStatus.value = '全部';
   emit('log', '已重置培训覆盖地图筛选条件');
 }
 
 function exportCurrentResult() {
+  if (!props.canExportExcel) {
+    emit('feature-blocked', 'Excel导出');
+    return;
+  }
   exportTrainingRecords(dashboard.value.filteredRecords);
   emit('log', `已导出当前培训结果，共 ${dashboard.value.filteredRecords.length} 条`);
 }
 
 function openBranchDetail(branch) {
   selectedBranch.value = branch;
+  selectedDetailScope.value = 'branch';
+  detailKeyword.value = '';
+  detailStatus.value = '全部';
+}
+
+function openTrainingCenterDetail(trainingCenter) {
+  selectedBranch.value = trainingCenter;
+  selectedDetailScope.value = 'trainingCenter';
   detailKeyword.value = '';
   detailStatus.value = '全部';
 }
 
 function closeBranchDetail() {
   selectedBranch.value = '';
+  selectedDetailScope.value = 'branch';
 }
 
 function exportBranchDetail() {
+  if (!props.canExportExcel) {
+    emit('feature-blocked', 'Excel导出');
+    return;
+  }
   if (!branchDetail.value.branchStat) return;
   exportBranchTrainingRecords(branchDetail.value.branchStat.branch, filteredBranchRows.value);
-  emit('log', `已导出 ${branchDetail.value.branchStat.branch} 分公司培训明细`);
+  emit('log', `已导出 ${branchDetail.value.branchStat.branch} 培训明细`);
 }
 
 function statusClass(status) {
@@ -624,7 +678,7 @@ function createDefaultFilters() {
     productLines: [],
     cycles: [],
     result: DEFAULT_TRAINING_FILTERS.result,
-    locations: [],
+    trainingCenters: [],
     trainingTypes: []
   };
 }
@@ -744,7 +798,7 @@ function buildTrainingTrendOption(seriesData) {
         itemStyle: { color: '#00d4ff', borderRadius: [6, 6, 0, 0] }
       },
       {
-        name: '培训人数',
+        name: '培训人次',
         type: 'bar',
         data: seriesData.map((item) => item.traineeCount),
         barWidth: 18,
@@ -836,5 +890,20 @@ function retryImport() {
 
 function closeImportOverlay() {
   resetImportOverlay();
+}
+
+async function loadLastDataset() {
+  const record = await loadToolDataset(LOCAL_DATASET_KEYS.TRAINING_COVERAGE_MAP);
+  const payload = record?.payload;
+  if (!payload?.records?.length) return;
+  importedRecords.value = payload.records;
+  importWarnings.value = payload.warnings || [];
+  Object.assign(draftFilters, createDefaultFilters());
+  appliedFilters.value = createDefaultFilters();
+  selectedBranch.value = '';
+  selectedDetailScope.value = 'branch';
+  detailKeyword.value = '';
+  detailStatus.value = '全部';
+  emit('log', `已加载上次培训覆盖地图数据，共 ${importedRecords.value.length} 条`);
 }
 </script>

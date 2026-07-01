@@ -43,8 +43,10 @@
       :result-state="resultState"
       :message="resultMessage"
       :status-text="statusText"
+      :download-locked="!canExportExcel"
       @process="processFiles"
       @download="download"
+      @locked-download="emit('feature-blocked', 'Excel导出')"
     />
 
     <StatsGrid :stats="stats" />
@@ -53,16 +55,24 @@
 </template>
 
 <script setup>
-import { computed, ref, watchEffect } from 'vue';
+import { computed, onMounted, ref, watchEffect } from 'vue';
 import { FileCheck2, FileSpreadsheet, TimerReset } from 'lucide-vue-next';
 import ActionPanel from '../components/ActionPanel.vue';
 import FileUploadCard from '../components/FileUploadCard.vue';
 import PreviewTable from '../components/PreviewTable.vue';
 import StatsGrid from '../components/StatsGrid.vue';
 import ToolHeader from '../components/ToolHeader.vue';
+import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
 import { downloadResult, processTimeoutTickets } from '../services/ticketToolService';
 
-const emit = defineEmits(['status-change', 'log']);
+defineProps({
+  canExportExcel: {
+    type: Boolean,
+    default: true
+  }
+});
+
+const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
 
 const workOrderFile = ref(null);
 const qualityFile = ref(null);
@@ -85,6 +95,8 @@ const statusText = computed(() => {
 watchEffect(() => {
   emit('status-change', statusText.value);
 });
+
+onMounted(loadLastDataset);
 
 function setWorkOrderFile(file) {
   workOrderFile.value = file;
@@ -138,6 +150,13 @@ async function processFiles() {
     downloadUrl.value = payload.download_url || '';
     stats.value = payload.stats || null;
     preview.value = payload.preview || null;
+    await saveToolDataset(LOCAL_DATASET_KEYS.TIMEOUT_TICKETS, {
+      resultState: resultState.value,
+      resultMessage: resultMessage.value,
+      downloadUrl: downloadUrl.value,
+      stats: stats.value,
+      preview: preview.value
+    });
     emit('log', `处理完成，最终导出 ${payload.stats?.result_total ?? 0} 条`);
   } catch (error) {
     progress.value = 0;
@@ -152,5 +171,18 @@ async function processFiles() {
 function download() {
   downloadResult(downloadUrl.value);
   emit('log', '已触发最终表格下载');
+}
+
+async function loadLastDataset() {
+  const record = await loadToolDataset(LOCAL_DATASET_KEYS.TIMEOUT_TICKETS);
+  const payload = record?.payload;
+  if (!payload) return;
+  progress.value = 100;
+  resultState.value = payload.resultState || 'success';
+  resultMessage.value = payload.resultMessage || '已加载上次处理结果';
+  downloadUrl.value = payload.downloadUrl || '';
+  stats.value = payload.stats || null;
+  preview.value = payload.preview || null;
+  emit('log', '已加载上次超时工单筛选结果');
 }
 </script>

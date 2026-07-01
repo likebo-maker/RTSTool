@@ -60,7 +60,7 @@
             :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"
           ></span>
           <span class="training-region-legend-name">{{ item.name }}</span>
-          <strong>{{ item.count }}家</strong>
+          <strong>{{ item.count }}个</strong>
         </div>
       </div>
 
@@ -114,10 +114,10 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['select-branch', 'update:displayMode']);
+const emit = defineEmits(['select-branch', 'select-center', 'update:displayMode']);
 
 const displayModes = [
-  { key: 'training-count', label: '培训人数' },
+  { key: 'training-count', label: '培训人次' },
   { key: 'pass-rate', label: '合格率' },
   { key: 'risk', label: '不合格风险' },
   { key: 'session-count', label: '培训场次' }
@@ -221,6 +221,7 @@ function renderMarkers() {
 
   const AMap = window.AMap;
   props.points.forEach((point) => {
+    const markerKey = point.trainingCenter || point.branch;
     const markerElement = document.createElement('button');
     markerElement.className = `qualification-map-marker training-map-point ${resolveTrainingPointTone(point, props.displayMode)}`;
     markerElement.style.width = '20px';
@@ -241,10 +242,10 @@ function renderMarkers() {
       markerElement.blur();
       marker.setTop?.(true);
       openInfoWindow(point, marker);
-      emit('select-branch', point.branch);
+      emit('select-center', markerKey);
     });
 
-    marker.__branch = point.branch;
+    marker.__branch = markerKey;
     marker.__element = markerElement;
     marker.setMap(mapInstance);
     markers.push(marker);
@@ -284,13 +285,14 @@ function openInfoWindow(point, marker) {
   const content = document.createElement('div');
   content.className = 'qualification-map-info-window';
   content.innerHTML = `
-    <strong>${escapeHtml(point.branch)}</strong>
+    <strong>${escapeHtml(point.trainingCenter || point.branch)}</strong>
+    <span>定位城市：${escapeHtml(point.city || '-')}</span>
     <span>大区：${escapeHtml(point.mappedRegion || '未匹配大区')}</span>
-    <span>培训人数：${point.traineeCount}</span>
+    <span>培训人次：${point.traineeCount}</span>
     <span>培训记录数：${point.recordCount}</span>
     <span>培训场次：${point.sessionCount}</span>
     <span>合格率：${escapeHtml(point.passRate)}</span>
-    <span>不合格人数：${point.failCount}</span>
+    <span>不合格人次：${point.failCount}</span>
     <span>主要产线：${escapeHtml(point.primaryProductLines)}</span>
     <span>主要培训类型：${escapeHtml(point.primaryTrainingTypes)}</span>
     <span>当前主指标：${escapeHtml(modeLabel)}</span>
@@ -301,9 +303,9 @@ function openInfoWindow(point, marker) {
 
 function resolveModeLabel(point) {
   if (props.displayMode === 'session-count') return `培训场次 ${point.sessionCount}`;
-  if (props.displayMode === 'risk') return `不合格人数 ${point.failCount}`;
+  if (props.displayMode === 'risk') return `不合格人次 ${point.failCount}`;
   if (props.displayMode === 'pass-rate') return `合格率 ${point.passRate}`;
-  return `培训人数 ${point.traineeCount}`;
+  return `培训人次 ${point.traineeCount}`;
 }
 
 function escapeHtml(text) {

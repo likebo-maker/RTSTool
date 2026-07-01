@@ -24,7 +24,14 @@
           <Upload :size="18" />
           <span>导入资质表</span>
         </button>
-        <button class="ghost-button" type="button" :disabled="interactionDisabled || !dashboard.filteredRecords.length" @click="exportCurrentResult">
+        <button
+          class="ghost-button"
+          :class="{ locked: !canExportExcel }"
+          type="button"
+          :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+          @click="exportCurrentResult"
+        >
           <Download :size="18" />
           <span>导出当前结果</span>
         </button>
@@ -339,7 +346,13 @@
                 <p class="section-kicker">Detail Filter</p>
                 <h2>人员资质明细</h2>
               </div>
-              <button class="ghost-button" type="button" @click="exportBranchDetail">
+              <button
+                class="ghost-button"
+                :class="{ locked: !canExportExcel }"
+                type="button"
+                :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+                @click="exportBranchDetail"
+              >
                 <Download :size="17" />
                 <span>导出当前分公司明细</span>
               </button>
@@ -406,7 +419,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, watchEffect } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watchEffect } from 'vue';
 import {
   AlertTriangle,
   CalendarClock,
@@ -429,6 +442,7 @@ import EChartPanel from '../components/EChartPanel.vue';
 import QualificationAmap from '../components/QualificationAmap.vue';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
+import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
 import {
   buildBranchDetail,
   buildQualificationDashboard,
@@ -438,7 +452,14 @@ import {
 import { exportBranchQualificationRecords, exportQualificationRecords } from '../utils/qualificationExport';
 import { parseQualificationFiles } from '../utils/qualificationParser';
 
-const emit = defineEmits(['status-change', 'log']);
+const props = defineProps({
+  canExportExcel: {
+    type: Boolean,
+    default: true
+  }
+});
+
+const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
 
 const fileInputRef = ref(null);
 const loading = ref(false);
@@ -535,6 +556,8 @@ watchEffect(() => {
   emit('status-change', hasData.value ? `资质地图就绪，当前 ${dashboard.value.filteredRecords.length} 条` : '中国区人员服务资质地图待导入数据');
 });
 
+onMounted(loadLastDataset);
+
 function openImporter() {
   if (interactionDisabled.value) return;
   fileInputRef.value?.click();
@@ -559,6 +582,10 @@ async function handleFileImport(event) {
     importWarnings.value = payload.warnings || [];
     Object.assign(draftFilters, createDefaultFilters());
     appliedFilters.value = createDefaultFilters();
+    await saveToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP, {
+      records: importedRecords.value,
+      warnings: importWarnings.value
+    });
     await nextTick();
     updateImportOverlayStep('generate', 'completed', 100, '导入完成');
     importOverlay.mode = 'success';
@@ -602,6 +629,10 @@ function resetFilters() {
 }
 
 function exportCurrentResult() {
+  if (!props.canExportExcel) {
+    emit('feature-blocked', 'Excel导出');
+    return;
+  }
   exportQualificationRecords(dashboard.value.filteredRecords);
   emit('log', `已导出当前资质结果，共 ${dashboard.value.filteredRecords.length} 条`);
 }
@@ -617,6 +648,10 @@ function closeBranchDetail() {
 }
 
 function exportBranchDetail() {
+  if (!props.canExportExcel) {
+    emit('feature-blocked', 'Excel导出');
+    return;
+  }
   if (!branchDetail.value.branchStat) return;
   exportBranchQualificationRecords(branchDetail.value.branchStat.branch, filteredBranchRows.value);
   emit('log', `已导出 ${branchDetail.value.branchStat.branch} 分公司资质明细`);
@@ -923,5 +958,19 @@ function retryImport() {
 
 function closeImportOverlay() {
   resetImportOverlay();
+}
+
+async function loadLastDataset() {
+  const record = await loadToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP);
+  const payload = record?.payload;
+  if (!payload?.records?.length) return;
+  importedRecords.value = payload.records;
+  importWarnings.value = payload.warnings || [];
+  Object.assign(draftFilters, createDefaultFilters());
+  appliedFilters.value = createDefaultFilters();
+  selectedBranch.value = '';
+  detailKeyword.value = '';
+  detailStatus.value = '全部';
+  emit('log', `已加载上次资质地图数据，共 ${importedRecords.value.length} 条`);
 }
 </script>

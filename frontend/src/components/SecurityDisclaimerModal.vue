@@ -19,14 +19,14 @@
             </div>
             <div>
               <p class="section-kicker">Information Security Notice</p>
-              <h2 id="security-disclaimer-title">RTS工程师效率工具箱信息安全声明</h2>
+              <h2 id="security-disclaimer-title">{{ brandConfig.appNameCn }}信息安全声明</h2>
             </div>
           </header>
 
           <div class="disclaimer-content">
             <section>
               <h3>一、工具性质说明</h3>
-              <p>RTS工程师效率工具箱为技术支持业务辅助工具，仅用于提升数据处理、统计分析和报表整理效率，不作为业务决策、质量判定或管理考核的唯一依据。</p>
+              <p>{{ brandConfig.appNameCn }}为技术支持业务辅助平台，仅用于提升数据处理、统计分析和报表整理效率，不作为业务决策、质量判定或管理考核的唯一依据。</p>
               <p>工具输出结果仅供参考，最终业务判断应以原始数据、公司制度及相关管理要求为准。</p>
             </section>
 
@@ -108,6 +108,7 @@
 
 <script setup>
 import { CheckCircle2, ShieldCheck } from 'lucide-vue-next';
+import { brandConfig } from '../config/brandConfig';
 
 defineProps({
   visible: {

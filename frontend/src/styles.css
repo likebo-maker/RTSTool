@@ -57,7 +57,7 @@ button {
 .login-page {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(460px, 2fr);
+  grid-template-columns: minmax(0, 1.08fr) minmax(430px, 0.92fr);
   min-height: 100vh;
   align-items: stretch;
   padding: 0;
@@ -310,15 +310,49 @@ button {
   text-align: center;
 }
 
+.boot-logo {
+  display: block;
+  width: 92px;
+  height: 78px;
+  object-fit: contain;
+  margin: 0 auto 14px;
+  filter: drop-shadow(0 0 22px rgba(0, 212, 255, 0.24));
+}
+
 .login-grid-bg {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(96, 165, 250, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(96, 165, 250, 0.08) 1px, transparent 1px);
+    linear-gradient(rgba(96, 165, 250, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(96, 165, 250, 0.055) 1px, transparent 1px),
+    radial-gradient(circle at 24% 28%, rgba(0, 212, 255, 0.07) 0 2px, transparent 3px),
+    radial-gradient(circle at 64% 62%, rgba(52, 211, 153, 0.06) 0 2px, transparent 3px);
   background-size: 48px 48px;
   mask-image: radial-gradient(circle at center, black, transparent 72%);
-  opacity: 0.34;
+  opacity: 0.42;
+}
+
+.login-grid-bg::before,
+.login-grid-bg::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+}
+
+.login-grid-bg::before {
+  background:
+    linear-gradient(115deg, transparent 0 18%, rgba(0, 212, 255, 0.06) 18.2%, transparent 18.6% 47%, rgba(52, 211, 153, 0.045) 47.2%, transparent 47.7%),
+    linear-gradient(35deg, transparent 0 36%, rgba(96, 165, 250, 0.045) 36.2%, transparent 36.6%);
+  opacity: 0.7;
+}
+
+.login-grid-bg::after {
+  background-image:
+    linear-gradient(30deg, rgba(0, 212, 255, 0.035) 12%, transparent 12.5%, transparent 87%, rgba(0, 212, 255, 0.035) 87.5%),
+    linear-gradient(150deg, rgba(52, 211, 153, 0.03) 12%, transparent 12.5%, transparent 87%, rgba(52, 211, 153, 0.03) 87.5%);
+  background-size: 92px 54px;
+  opacity: 0.5;
 }
 
 .login-glow {
@@ -352,10 +386,10 @@ button {
 
 .login-brand-panel {
   display: grid;
-  align-content: center;
+  align-content: start;
   justify-items: start;
   min-width: 0;
-  padding: clamp(42px, 7vw, 96px);
+  padding: 260px 64px 56px 80px;
   border-right: 1px solid rgba(96, 165, 250, 0.18);
   background:
     linear-gradient(120deg, rgba(0, 122, 255, 0.12), transparent 45%),
@@ -363,30 +397,66 @@ button {
   overflow: hidden;
 }
 
+.login-brand-logo {
+  width: 160px;
+  height: auto;
+  min-width: 160px;
+  object-fit: contain;
+  margin: 0 0 24px 0;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 28px rgba(0, 212, 255, 0.26));
+}
+
+.login-brand-panel .section-kicker {
+  margin: 0 0 10px;
+  color: #2fd6c8;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
 .login-brand-panel h1 {
   max-width: 760px;
   margin: 0;
-  color: #f8fbff;
-  font-size: clamp(46px, 5.8vw, 76px);
-  font-weight: 900;
-  line-height: 1.06;
+  color: #ffffff;
+  font-size: 60px;
+  font-weight: 700;
+  line-height: 1.12;
   letter-spacing: 0;
 }
 
 .login-brand-desc {
   max-width: 620px;
-  margin: 24px 0 0;
-  color: #c0d4ec;
+  margin: 22px 0 0;
+  color: rgba(255, 255, 255, 0.7);
   font-size: 22px;
-  line-height: 1.8;
+  line-height: 1.55;
   text-shadow: 0 0 22px rgba(0, 122, 255, 0.2);
+}
+
+.login-slogan {
+  margin-top: 14px;
+  color: #7ee8ff;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-shadow: 0 0 18px rgba(0, 212, 255, 0.24);
+}
+
+.login-platform-desc {
+  max-width: 540px;
+  margin: 18px 0 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 18px;
+  line-height: 1.65;
 }
 
 .brand-metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 42px;
+  gap: 12px 14px;
+  max-width: 640px;
+  margin-top: 30px;
 }
 
 .brand-metrics span {
@@ -397,10 +467,12 @@ button {
   padding: 8px 13px;
   border: 1px solid rgba(96, 165, 250, 0.2);
   border-radius: 999px;
-  background: rgba(15, 23, 42, 0.36);
+  background: rgba(15, 23, 42, 0.42);
   color: #a8c8e8;
   font-size: 14px;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+  box-shadow:
+    0 0 18px rgba(0, 212, 255, 0.06),
+    inset 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .brand-metrics svg {
@@ -440,14 +512,15 @@ button {
   display: grid;
   place-items: center;
   min-width: 0;
-  padding: clamp(30px, 5vw, 72px);
+  padding: clamp(30px, 5vw, 72px) clamp(34px, 4.6vw, 76px) clamp(30px, 5vw, 72px) clamp(20px, 2.8vw, 44px);
 }
 
 .login-card {
   position: relative;
   z-index: 1;
-  width: min(560px, 100%);
-  padding: 34px;
+  width: min(450px, 100%);
+  padding: 34px 34px 32px;
+  transform: translateX(-40px);
   border: 1px solid transparent;
   border-radius: 18px;
   background:
@@ -472,29 +545,45 @@ button {
 
 .login-brand {
   display: grid;
-  grid-template-columns: 58px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
   align-items: center;
-  margin-bottom: 30px;
+  margin-bottom: 16px;
 }
 
 .login-logo {
-  width: 58px;
-  height: 58px;
+  width: 44px;
+  height: 44px;
+  mix-blend-mode: screen;
+}
+
+.login-powered {
+  width: min(450px, 100%);
+  margin-top: 14px;
+  color: rgba(126, 232, 255, 0.55);
+  font-size: 12px;
+  text-align: center;
+  transform: translateX(-40px);
 }
 
 .login-brand h2 {
   margin: 0;
   color: #f8fbff;
-  font-size: 34px;
+  font-size: 30px;
   line-height: 1.1;
   letter-spacing: 0;
 }
 
 .login-brand p {
-  margin: 8px 0 0;
+  margin: 7px 0 0;
   color: var(--muted);
-  font-size: 15px;
+  font-size: 14px;
+}
+
+.login-card-hint {
+  margin: 0 0 24px;
+  color: rgba(191, 205, 224, 0.78);
+  font-size: 14px;
 }
 
 .login-form {
@@ -737,6 +826,24 @@ button {
   box-shadow: 0 0 28px rgba(0, 122, 255, 0.25);
 }
 
+.image-logo {
+  overflow: hidden;
+}
+
+.image-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.sidebar-logo img,
+.top-logo img,
+.login-logo img,
+.license-center-logo img {
+  filter: drop-shadow(0 0 12px rgba(0, 212, 255, 0.2));
+}
+
 .brand-copy,
 .top-title > div:last-child {
   min-width: 0;
@@ -812,6 +919,22 @@ button {
   box-shadow: inset 3px 0 0 var(--blue);
 }
 
+.nav-item.locked {
+  color: rgba(148, 163, 184, 0.62);
+  opacity: 0.68;
+}
+
+.nav-item.locked:hover {
+  background: rgba(148, 163, 184, 0.08);
+  color: rgba(203, 213, 225, 0.86);
+  box-shadow: inset 3px 0 0 rgba(148, 163, 184, 0.36);
+}
+
+.nav-lock {
+  margin-left: auto;
+  color: #8fa3bd;
+}
+
 .nav-item.active::after {
   position: absolute;
   right: 12px;
@@ -867,6 +990,10 @@ button {
   border-radius: 50%;
   color: var(--teal);
   box-shadow: 0 0 22px rgba(52, 211, 153, 0.18);
+}
+
+.top-logo {
+  border-radius: var(--radius);
 }
 
 .top-actions {
@@ -1206,6 +1333,22 @@ h2 {
   opacity: 0.46;
 }
 
+.primary-button.locked,
+.ghost-button.locked {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(15, 23, 42, 0.36);
+  color: rgba(203, 213, 225, 0.72);
+  cursor: not-allowed;
+  opacity: 0.68;
+  box-shadow: none;
+}
+
+.primary-button.locked:hover,
+.ghost-button.locked:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .disclaimer-backdrop {
   position: fixed;
   inset: 0;
@@ -1233,6 +1376,21 @@ h2 {
   box-shadow:
     0 28px 90px rgba(0, 0, 0, 0.52),
     0 0 74px rgba(0, 122, 255, 0.24),
+    inset 0 1px rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.unauthorized-modal {
+  display: grid;
+  width: min(620px, 100%);
+  border: 1px solid transparent;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(15, 31, 56, 0.96), rgba(8, 15, 31, 0.95)) padding-box,
+    linear-gradient(135deg, rgba(0, 212, 255, 0.62), rgba(52, 211, 153, 0.42)) border-box;
+  box-shadow:
+    0 28px 90px rgba(0, 0, 0, 0.52),
+    0 0 74px rgba(0, 122, 255, 0.2),
     inset 0 1px rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
@@ -1266,6 +1424,27 @@ h2 {
   color: #f8fbff;
   font-size: 22px;
   line-height: 1.25;
+}
+
+.disclaimer-header p {
+  margin: 6px 0 0;
+  color: #aebfd5;
+}
+
+.unauthorized-content {
+  display: grid;
+  gap: 8px;
+  padding: 22px 24px;
+  color: #aebfd5;
+}
+
+.unauthorized-content strong {
+  color: #f3fbff;
+  font-size: 20px;
+}
+
+.unauthorized-content small {
+  color: #7dd3fc;
 }
 
 .disclaimer-content {
@@ -1408,6 +1587,58 @@ h2 {
 .status-pill.error {
   border-color: rgba(255, 59, 48, 0.46);
   color: #ffb0aa;
+}
+
+.unauthorized-page {
+  display: grid;
+  place-items: center;
+}
+
+.unauthorized-state {
+  display: grid;
+  width: min(720px, 100%);
+  gap: 14px;
+  justify-items: start;
+  padding: 34px;
+}
+
+.unauthorized-state h1 {
+  margin: 0;
+  color: #f8fbff;
+  font-size: 30px;
+}
+
+.unauthorized-state p {
+  margin: 0;
+  color: #aebfd5;
+}
+
+.unauthorized-feature-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  color: #91a4bd;
+}
+
+.unauthorized-feature-line strong {
+  color: #f3fbff;
+}
+
+.unauthorized-machine-code {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: var(--radius);
+  background: rgba(2, 6, 23, 0.36);
+  color: #7dd3fc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.unauthorized-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .spin {
@@ -1595,14 +1826,7 @@ tr:hover td {
 
 .training-filter-grid {
   display: grid;
-  grid-template-columns: 0.92fr 0.9fr 0.92fr 0.92fr 0.8fr 1.12fr 0.88fr auto;
-  gap: 10px;
-  align-items: end;
-}
-
-.training-filter-grid {
-  display: grid;
-  grid-template-columns: 0.92fr 0.9fr 0.92fr 0.92fr 0.8fr 1.12fr 0.88fr auto;
+  grid-template-columns: 0.95fr 0.9fr 0.95fr 0.95fr 0.82fr 1.1fr 0.9fr auto;
   gap: 10px;
   align-items: end;
 }
@@ -2581,6 +2805,21 @@ tr:hover td {
   max-width: 780px;
 }
 
+.home-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.home-brand-logo {
+  width: 78px;
+  height: 68px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 18px rgba(0, 212, 255, 0.24));
+}
+
 .home-hero-copy p:last-child {
   margin-bottom: 0;
   color: var(--muted);
@@ -2603,6 +2842,7 @@ tr:hover td {
 }
 
 .featured-tool-card {
+  position: relative;
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr) auto;
   gap: 18px;
@@ -2628,6 +2868,24 @@ tr:hover td {
     0 0 52px rgba(0, 122, 255, 0.18),
     0 0 38px rgba(52, 211, 153, 0.14);
   transform: translateY(-1px);
+}
+
+.featured-tool-card.locked {
+  border-color: rgba(148, 163, 184, 0.16);
+  opacity: 0.58;
+}
+
+.featured-tool-card.locked:hover {
+  border-color: rgba(148, 163, 184, 0.34);
+  box-shadow: none;
+  transform: none;
+}
+
+.featured-tool-lock {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  color: #9fb0c5;
 }
 
 .featured-tool-icon {
@@ -2678,6 +2936,12 @@ tr:hover td {
 .tool-status.pending {
   background: rgba(255, 149, 0, 0.14);
   color: #ffd49a;
+}
+
+.tool-status.locked {
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: rgba(148, 163, 184, 0.1);
+  color: #a8bbd3;
 }
 
 .featured-tool-card p {
@@ -2739,6 +3003,138 @@ tr:hover td {
 
 .planned-tool-card:hover::after {
   opacity: 1;
+}
+
+.license-center-page {
+  display: grid;
+  gap: 18px;
+}
+
+.license-center-summary,
+.license-center-activation,
+.license-feature-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.license-center-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.license-center-grid > div {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: var(--radius);
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.license-center-grid span {
+  display: block;
+  color: #8fa3bd;
+  font-size: 12px;
+}
+
+.license-center-grid strong {
+  display: block;
+  margin-top: 8px;
+  color: #eef8ff;
+  overflow-wrap: anywhere;
+}
+
+.license-center-warning {
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 149, 0, 0.28);
+  border-radius: var(--radius);
+  background: rgba(255, 149, 0, 0.08);
+  color: #ffd49a;
+}
+
+.license-center-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.license-feature-table {
+  max-height: 520px;
+}
+
+.license-feature-status {
+  display: inline-flex;
+  min-width: 72px;
+  justify-content: center;
+  padding: 5px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: var(--radius);
+  color: #a8bbd3;
+}
+
+.license-feature-status.active {
+  border-color: rgba(52, 211, 153, 0.34);
+  background: rgba(52, 211, 153, 0.1);
+  color: #9dffc3;
+}
+
+.license-guide-logo {
+  width: min(300px, 74vw);
+  max-height: 190px;
+  object-fit: contain;
+  margin-bottom: 12px;
+  filter: drop-shadow(0 0 26px rgba(0, 212, 255, 0.18));
+}
+
+.about-platform-page {
+  gap: 18px;
+}
+
+.about-platform-header {
+  align-items: center;
+}
+
+.about-platform-logo {
+  width: 132px;
+  height: 118px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 22px rgba(0, 212, 255, 0.2));
+}
+
+.about-platform-panel {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+}
+
+.about-platform-panel p {
+  margin: 0;
+  color: #b8cbe3;
+  line-height: 1.8;
+}
+
+.about-capability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.about-capability-card {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(96, 165, 250, 0.16);
+  border-radius: var(--radius);
+  background: rgba(2, 6, 23, 0.28);
+  color: #d7ebff;
+}
+
+.about-capability-card svg {
+  color: #7ee8ff;
 }
 
 .planned-tool-card h3 {
@@ -2847,9 +3243,14 @@ tr:hover td {
 
   .login-brand-panel {
     min-height: 420px;
-    padding: 42px 28px;
+    padding: 54px 28px 42px;
     border-right: 0;
     border-bottom: 1px solid rgba(96, 165, 250, 0.18);
+  }
+
+  .login-brand-logo {
+    width: 150px;
+    min-width: 150px;
   }
 
   .login-brand-panel h1 {
@@ -2858,6 +3259,11 @@ tr:hover td {
 
   .login-form-panel {
     padding: 34px 20px;
+  }
+
+  .login-card,
+  .login-powered {
+    transform: none;
   }
 
   .license-machine-row,
@@ -3009,7 +3415,8 @@ tr:hover td {
     width: 100%;
   }
 
-  .qualification-filter-grid {
+  .qualification-filter-grid,
+  .training-filter-grid {
     grid-template-columns: 1fr;
   }
 

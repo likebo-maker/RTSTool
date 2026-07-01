@@ -1,6 +1,7 @@
 <template>
   <div v-if="!licenseReady" class="boot-screen">
     <div class="glass-panel boot-card">
+      <img class="boot-logo" :src="brandConfig.logoMark" :alt="brandConfig.appShortName" />
       <p class="section-kicker">License Check</p>
       <h2>正在校验程序授权</h2>
       <p>{{ licenseBootMessage }}</p>
@@ -20,37 +21,79 @@
     <Sidebar
       :collapsed="sidebarCollapsed"
       :active-tool="activeTool"
+      :license-info="licenseStatusInfo"
       @toggle="sidebarCollapsed = !sidebarCollapsed"
-      @select="activeTool = $event"
+      @select="selectTool"
+      @show-disclaimer="openDisclaimer('view')"
     />
 
     <div class="app-frame">
-      <TopBar :license-info="licenseStatusInfo" @show-disclaimer="openDisclaimer('view')" />
+      <TopBar
+        :license-info="licenseStatusInfo"
+        @show-disclaimer="openDisclaimer('view')"
+        @show-license-center="selectTool('license-center')"
+      />
 
       <main class="main-content">
+        <UnauthorizedState
+          v-if="routeBlocked"
+          :feature-name="activeToolName"
+          :machine-code="licenseStatusInfo.machine_code"
+          :expired="licenseExpired"
+          @back-home="activeTool = 'home'"
+          @open-license-center="selectTool('license-center')"
+        />
+        <LicenseCenter
+          v-else-if="activeTool === 'license-center'"
+          :license-info="licenseStatusInfo"
+          @refresh-license="fetchLicenseStatus"
+          @activated="handleLicenseActivated"
+          @status-change="handleStatusChange"
+          @log="appendLog"
+        />
+        <AboutPlatform
+          v-else-if="activeTool === 'about-platform'"
+          @status-change="handleStatusChange"
+        />
         <TimeoutTicketTool
-          v-if="activeTool === 'timeout-ticket-filter'"
+          v-else-if="activeTool === 'timeout-ticket-filter'"
+          :can-export-excel="canExportExcel"
+          @feature-blocked="showUnauthorizedFeature"
           @status-change="handleStatusChange"
           @log="appendLog"
         />
         <OnlineBusinessTool
           v-else-if="activeTool === 'online-business-calculation'"
+          :can-export-excel="canExportExcel"
+          @feature-blocked="showUnauthorizedFeature"
+          @status-change="handleStatusChange"
+          @log="appendLog"
+        />
+        <OnlineAssessmentTool
+          v-else-if="activeTool === 'online-service-assessment'"
+          :can-export-excel="canExportExcel"
+          @feature-blocked="showUnauthorizedFeature"
           @status-change="handleStatusChange"
           @log="appendLog"
         />
         <ServiceQualificationMap
           v-else-if="activeTool === 'service-qualification-map'"
+          :can-export-excel="canExportExcel"
+          @feature-blocked="showUnauthorizedFeature"
           @status-change="handleStatusChange"
           @log="appendLog"
         />
         <TrainingCoverageMap
           v-else-if="activeTool === 'training-coverage-map'"
+          :can-export-excel="canExportExcel"
+          @feature-blocked="showUnauthorizedFeature"
           @status-change="handleStatusChange"
           @log="appendLog"
         />
         <HomeOverview
           v-else-if="activeTool === 'home'"
-          @select-tool="activeTool = $event"
+          :license-info="licenseStatusInfo"
+          @select-tool="selectTool"
           @status-change="handleStatusChange"
         />
         <ToolPlaceholder
@@ -63,7 +106,7 @@
       <StatusBar
         :status="runtimeStatus"
         :logs="logs"
-        version="v1.1.0"
+        :version="brandConfig.version"
       />
     </div>
   </div>
@@ -74,10 +117,18 @@
     @agree="handleDisclaimerAgree"
     @cancel="disclaimerVisible = false"
   />
+
+  <UnauthorizedModal
+    :visible="unauthorizedModal.visible"
+    :feature-name="unauthorizedModal.featureName"
+    :machine-code="licenseStatusInfo.machine_code"
+    @close="unauthorizedModal.visible = false"
+    @open-license-center="openLicenseCenterFromModal"
+  />
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import LoginView from './components/LoginView.vue';
 import LicenseActivationView from './components/LicenseActivationView.vue';
 import SecurityDisclaimerModal from './components/SecurityDisclaimerModal.vue';
@@ -85,11 +136,18 @@ import Sidebar from './components/Sidebar.vue';
 import StatusBar from './components/StatusBar.vue';
 import ToolPlaceholder from './components/ToolPlaceholder.vue';
 import TopBar from './components/TopBar.vue';
+import UnauthorizedModal from './components/UnauthorizedModal.vue';
+import UnauthorizedState from './components/UnauthorizedState.vue';
+import AboutPlatform from './tools/AboutPlatform.vue';
 import HomeOverview from './tools/HomeOverview.vue';
+import LicenseCenter from './tools/LicenseCenter.vue';
+import OnlineAssessmentTool from './tools/OnlineAssessmentTool.vue';
 import OnlineBusinessTool from './tools/OnlineBusinessTool.vue';
 import ServiceQualificationMap from './tools/ServiceQualificationMap.vue';
 import TrainingCoverageMap from './tools/TrainingCoverageMap.vue';
 import TimeoutTicketTool from './tools/TimeoutTicketTool.vue';
+import { brandConfig } from './config/brandConfig';
+import { FEATURES, hasFeature, hasToolAccess, isLicenseExpired, toolFeatureLabel } from './utils/licenseFeatures';
 
 const DISCLAIMER_STORAGE_KEY = 'rts_toolbox_disclaimer_agreed';
 const DISCLAIMER_VERSION = '1.0';
@@ -106,13 +164,22 @@ const licenseRequired = ref(false);
 const licenseAuthorized = ref(false);
 const licenseStatusInfo = ref({});
 const licenseBootMessage = ref('正在读取本机授权状态...');
+const unauthorizedModal = reactive({
+  visible: false,
+  featureName: ''
+});
+
+const licenseExpired = computed(() => isLicenseExpired(licenseStatusInfo.value));
+const routeBlocked = computed(() => !hasToolAccess(licenseStatusInfo.value, activeTool.value));
+const activeToolName = computed(() => toolFeatureLabel(activeTool.value));
+const canExportExcel = computed(() => hasFeature(licenseStatusInfo.value, FEATURES.EXPORT_EXCEL));
 
 fetchLicenseStatus();
 
 function handleLoginSuccess() {
   isAuthenticated.value = true;
-  runtimeStatus.value = '登录成功，工具箱首页就绪';
-  logs.value = ['用户登录成功，进入工具箱首页', ...logs.value].slice(0, 5);
+  runtimeStatus.value = '登录成功，平台首页就绪';
+  logs.value = ['用户登录成功，进入平台首页', ...logs.value].slice(0, 5);
 
   if (!hasStoredDisclaimerAgreement()) {
     window.setTimeout(() => {
@@ -128,6 +195,24 @@ function handleStatusChange(status) {
 function appendLog(message) {
   if (!message) return;
   logs.value = [message, ...logs.value].slice(0, 5);
+}
+
+function selectTool(toolKey) {
+  if (!hasToolAccess(licenseStatusInfo.value, toolKey)) {
+    showUnauthorizedFeature(toolFeatureLabel(toolKey));
+    return;
+  }
+  activeTool.value = toolKey;
+}
+
+function showUnauthorizedFeature(featureName) {
+  unauthorizedModal.featureName = featureName || '当前功能';
+  unauthorizedModal.visible = true;
+}
+
+function openLicenseCenterFromModal() {
+  unauthorizedModal.visible = false;
+  activeTool.value = 'license-center';
 }
 
 function openDisclaimer(mode = 'view') {
@@ -179,8 +264,14 @@ async function fetchLicenseStatus() {
     }
     licenseStatusInfo.value = payload;
     licenseRequired.value = Boolean(payload.enabled);
-    licenseAuthorized.value = !payload.enabled || payload.status === 'active';
-    licenseBootMessage.value = licenseAuthorized.value ? '授权校验通过，正在进入程序...' : '需要激活授权，正在打开授权页...';
+    licenseAuthorized.value = !payload.enabled || payload.status === 'active' || payload.status === 'expired';
+    licenseBootMessage.value = licenseAuthorized.value ? '授权校验完成，正在进入程序...' : '需要激活授权，正在打开授权页...';
+    if (payload.status === 'expired') {
+      activeTool.value = 'home';
+      window.setTimeout(() => {
+        showUnauthorizedFeature('授权已过期');
+      }, 240);
+    }
   } catch (error) {
     licenseStatusInfo.value = {
       enabled: true,
@@ -203,5 +294,6 @@ function handleLicenseActivated(info) {
   licenseRequired.value = Boolean(info?.enabled);
   licenseAuthorized.value = true;
   licenseReady.value = true;
+  activeTool.value = 'license-center';
 }
 </script>
