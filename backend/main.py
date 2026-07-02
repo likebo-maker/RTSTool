@@ -346,6 +346,20 @@ def _validate_xlsx_upload_any(
         )
 
 
+def _validate_table_upload_any(
+    upload: UploadFile, label: str, expected_filenames: list[str]
+) -> None:
+    filename = upload.filename or ""
+    lower_filename = filename.lower()
+    if not lower_filename.endswith((".xlsx", ".xlsm", ".xls", ".csv")):
+        raise HTTPException(status_code=400, detail=f"{label}必须是 Excel 或 CSV 文件")
+    if not any(expected_filename in filename for expected_filename in expected_filenames):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{label}文件名应包含：{' 或 '.join(expected_filenames)}。当前文件名：{filename}",
+        )
+
+
 def _normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     normalized = df.copy()
     normalized.columns = [str(column).strip() for column in normalized.columns]
@@ -373,6 +387,14 @@ def _read_required_excel_sheet(upload: UploadFile, label: str, sheet_name: str) 
         raise HTTPException(status_code=400, detail=f"{label}解析失败：{exc}") from exc
 
 
+def _read_online_business_table(upload: UploadFile, label: str, sheet_name: str) -> pd.DataFrame:
+    filename = upload.filename or ""
+    lower_filename = filename.lower()
+    if lower_filename.endswith(".csv"):
+        return _read_assessment_table(upload, label)
+    return _read_required_excel_sheet(upload, label, sheet_name)
+
+
 def _read_ivd_customer_sheets(upload: UploadFile) -> dict[str, pd.DataFrame]:
     try:
         upload.file.seek(0)
@@ -396,6 +418,63 @@ def _read_ivd_customer_sheets(upload: UploadFile) -> dict[str, pd.DataFrame]:
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"IVD客户群数量文件解析失败：{exc}") from exc
+
+
+def _read_ivd_customer_upload(upload: UploadFile) -> dict[str, pd.DataFrame]:
+    filename = upload.filename or ""
+    if filename.lower().endswith(".csv"):
+        return _split_ivd_customer_csv(_read_assessment_table(upload, "IVD客户群表"))
+    return _read_ivd_customer_sheets(upload)
+
+
+def _split_ivd_customer_csv(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    level_column = _find_optional_column(
+        df,
+        ["客户层级", "客户类型", "客户分类", "层级", "分类", "客户级别", "VIP客户级别"],
+    )
+    if not level_column:
+        raise HTTPException(
+            status_code=400,
+            detail="IVD客户群表 CSV 必须包含客户层级字段，用于区分双大、县域+社办AB类、JC+社办CD类",
+        )
+
+    normalized_levels = df[level_column].map(_normalize_ivd_customer_level)
+    double_df = df[normalized_levels == ONLINE_BUSINESS_SHEETS["ivd_double"]].copy()
+    ab_df = df[normalized_levels == ONLINE_BUSINESS_SHEETS["ivd_ab"]].copy()
+    jc_df = df[normalized_levels == ONLINE_BUSINESS_SHEETS["ivd_jc"]].copy()
+    for current_df in (double_df, ab_df, jc_df):
+        if level_column in current_df.columns:
+            current_df.drop(columns=[level_column], inplace=True)
+    if "客户数量" not in jc_df.columns and len(jc_df.columns):
+        jc_df["客户数量"] = 1
+
+    return {
+        ONLINE_BUSINESS_SHEETS["ivd_double"]: _normalize_dataframe(double_df),
+        ONLINE_BUSINESS_SHEETS["ivd_ab"]: _normalize_dataframe(ab_df),
+        ONLINE_BUSINESS_SHEETS["ivd_jc"]: _normalize_dataframe(jc_df),
+    }
+
+
+def _find_optional_column(df: pd.DataFrame, aliases: list[str]) -> str | None:
+    normalized_to_original = {
+        _normalize_column_name(column): column for column in df.columns
+    }
+    for alias in aliases:
+        column = normalized_to_original.get(_normalize_column_name(alias))
+        if column is not None:
+            return column
+    return None
+
+
+def _normalize_ivd_customer_level(value: Any) -> str:
+    text = _normalize_cell_text(value)
+    if text in {"双大", "双大客户", "双大客户群"}:
+        return ONLINE_BUSINESS_SHEETS["ivd_double"]
+    if text in {"县域+社办AB类", "县域社办AB类", "县域+社办AB", "AB", "AB类", "县域社办AB"}:
+        return ONLINE_BUSINESS_SHEETS["ivd_ab"]
+    if text in {"JC+社办CD类", "JC社办CD类", "JC+社办CD", "JC+社办", "JC社办", "CD", "CD类"}:
+        return ONLINE_BUSINESS_SHEETS["ivd_jc"]
+    return text
 
 
 def _ensure_columns(df: pd.DataFrame, required_columns: list[str], label: str) -> None:
@@ -1184,8 +1263,8 @@ def _add_calculation_logic_sheet_legacy(writer: pd.ExcelWriter) -> None:
     add(
         "输入校验",
         "MCC热线原始数据",
-        "上传文件：MCC热线原始数据.xlsx；Sheet：MCC热线原始数据",
-        "文件必须为 .xlsx，文件名包含 MCC热线原始数据",
+        "上传文件：MCC热线原始数据.xlsx/csv；Excel Sheet：MCC热线原始数据；CSV 直接读取表头",
+        "文件必须为 Excel 或 CSV，文件名包含 MCC热线原始数据",
         "必需字段：客户ID、客户名称、受理单(service call)状态、创建时间、申告渠道、VIP客户级别",
         "无",
         "字段名按原始表头精确校验",
@@ -1194,8 +1273,8 @@ def _add_calculation_logic_sheet_legacy(writer: pd.ExcelWriter) -> None:
     add(
         "输入校验",
         "视频工单原始数据",
-        "上传文件：视频工单原始数据.xlsx；Sheet：视频工单原始数据",
-        "文件必须为 .xlsx，文件名包含 视频工单原始数据",
+        "上传文件：视频工单原始数据.xlsx/csv；Excel Sheet：视频工单原始数据；CSV 直接读取表头",
+        "文件必须为 Excel 或 CSV，文件名包含 视频工单原始数据",
         "必需字段：创建日期、用户状态、客户代码、客户、VIP客户级别",
         "无",
         "字段名按原始表头精确校验",
@@ -1204,8 +1283,8 @@ def _add_calculation_logic_sheet_legacy(writer: pd.ExcelWriter) -> None:
     add(
         "输入校验",
         "MSP工单原始数据",
-        "上传文件：MSP工单原始数据.xlsx；Sheet：MSP工单原始数据",
-        "文件必须为 .xlsx，文件名包含 MSP工单原始数据",
+        "上传文件：MSP工单原始数据.xlsx/csv；Excel Sheet：MSP工单原始数据；CSV 直接读取表头",
+        "文件必须为 Excel 或 CSV，文件名包含 MSP工单原始数据",
         "必需字段：创建时间、申告渠道、工作方式、工单类型",
         "无",
         "字段名按原始表头精确校验",
@@ -1214,8 +1293,8 @@ def _add_calculation_logic_sheet_legacy(writer: pd.ExcelWriter) -> None:
     add(
         "输入校验",
         "IVD客户群表",
-        "上传文件：IVD客户群表.xlsx；兼容旧名 IVD客户群数量2025.xlsx",
-        "必需 Sheet：双大、县域+社办AB类、JC+社办CD类",
+        "上传文件：IVD客户群表.xlsx/csv；兼容旧名 IVD客户群数量2025；CSV 需包含客户层级字段",
+        "Excel 必需 Sheet：双大、县域+社办AB类、JC+社办CD类；CSV 按客户层级拆分",
         "双大/县域+社办AB类必需字段：客户代码、客户名称；JC+社办CD类必需字段：客户数量",
         "无",
         "双大、县域+社办AB类按客户代码匹配；AB 还会建立客户名称匹配集合",
@@ -2747,31 +2826,31 @@ def process_online_business_excels(
     ivd_customer_file: UploadFile,
     include_source_sheets: bool = False,
 ) -> dict[str, Any]:
-    _validate_xlsx_upload_any(
+    _validate_table_upload_any(
         mcc_file,
         "MCC热线原始数据",
         ["MCC热线原始数据", "MCC热线工单", "MCC热线"],
     )
-    _validate_xlsx_upload_any(
+    _validate_table_upload_any(
         video_file,
         "视频工单原始数据",
         ["视频工单原始数据", "CRM视频工单", "视频工单"],
     )
-    _validate_xlsx_upload_any(
+    _validate_table_upload_any(
         msp_file,
         "MSP工单原始数据",
         ["MSP工单原始数据", "MSP工单总表", "MSP工单"],
     )
-    _validate_xlsx_upload_any(
+    _validate_table_upload_any(
         ivd_customer_file,
         "IVD客户群表",
         ["IVD客户群表", "IVD客户群数量2025"],
     )
 
-    mcc_df = _read_required_excel_sheet(mcc_file, "MCC热线原始数据", ONLINE_BUSINESS_SHEETS["mcc"])
-    video_df = _read_required_excel_sheet(video_file, "视频工单原始数据", ONLINE_BUSINESS_SHEETS["video"])
-    msp_df = _read_required_excel_sheet(msp_file, "MSP工单原始数据", ONLINE_BUSINESS_SHEETS["msp"])
-    ivd_sheets = _read_ivd_customer_sheets(ivd_customer_file)
+    mcc_df = _read_online_business_table(mcc_file, "MCC热线原始数据", ONLINE_BUSINESS_SHEETS["mcc"])
+    video_df = _read_online_business_table(video_file, "视频工单原始数据", ONLINE_BUSINESS_SHEETS["video"])
+    msp_df = _read_online_business_table(msp_file, "MSP工单原始数据", ONLINE_BUSINESS_SHEETS["msp"])
+    ivd_sheets = _read_ivd_customer_upload(ivd_customer_file)
 
     _ensure_columns(mcc_df, ONLINE_REQUIRED_COLUMNS["mcc"], "MCC热线原始数据")
     _ensure_columns(video_df, ONLINE_REQUIRED_COLUMNS["video"], "视频工单原始数据")

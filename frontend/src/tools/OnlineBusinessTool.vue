@@ -13,47 +13,47 @@
           <p class="section-kicker">File Intake</p>
           <h2>文件上传</h2>
         </div>
-        <span class="format-chip">.xlsx</span>
+        <span class="format-chip">xlsx / csv</span>
       </div>
 
       <div class="upload-grid online-upload-grid">
         <FileUploadCard
           :file="mccFile"
           :icon="Headphones"
-          title="上传 MCC热线原始数据.xlsx"
+          title="上传 MCC热线原始数据"
           description="用于热线进线量、解决率和客户覆盖率分子计算"
-          accept=".xlsx"
-          format-text="支持格式：xlsx"
+          accept=".xlsx,.xls,.csv"
+          format-text="支持格式：xlsx / csv"
           :disabled="isProcessing"
           @change="setFile('mcc', $event)"
         />
         <FileUploadCard
           :file="videoFile"
           :icon="Video"
-          title="上传 视频工单原始数据.xlsx"
+          title="上传 视频工单原始数据"
           description="用于统计视频转技术支持工单数量"
-          accept=".xlsx"
-          format-text="支持格式：xlsx"
+          accept=".xlsx,.xls,.csv"
+          format-text="支持格式：xlsx / csv"
           :disabled="isProcessing"
           @change="setFile('video', $event)"
         />
         <FileUploadCard
           :file="mspFile"
           :icon="FileSpreadsheet"
-          title="上传 MSP工单原始数据.xlsx"
+          title="上传 MSP工单原始数据"
           description="用于统计 MSP 远程申告和 CS申告工单数量"
-          accept=".xlsx"
-          format-text="支持格式：xlsx"
+          accept=".xlsx,.xls,.csv"
+          format-text="支持格式：xlsx / csv"
           :disabled="isProcessing"
           @change="setFile('msp', $event)"
         />
         <FileUploadCard
           :file="ivdCustomerFile"
           :icon="UsersRound"
-          title="上传 IVD客户群表.xlsx"
+          title="上传 IVD客户群表"
           description="用于客户层级匹配、整体客户总量和 JC+社办分母"
-          accept=".xlsx"
-          format-text="支持格式：xlsx"
+          accept=".xlsx,.xls,.csv"
+          format-text="支持格式：xlsx / csv"
           :disabled="isProcessing"
           @change="setFile('ivd', $event)"
         />

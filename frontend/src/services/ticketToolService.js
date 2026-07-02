@@ -88,7 +88,7 @@ export function processOnlineBusiness({
         return;
       }
 
-      reject(new Error(payload.detail || '计算失败，请检查文件名、Sheet 名和必需字段'));
+      reject(new Error(payload.detail || '计算失败，请检查文件名、Sheet/CSV 表头和必需字段'));
     };
 
     request.onerror = () => {
@@ -147,7 +147,7 @@ export function processOnlineAssessment({
         return;
       }
 
-      reject(new Error(payload.detail || '计算失败，请检查文件名、Sheet 名和必需字段'));
+      reject(new Error(payload.detail || '计算失败，请检查文件名、Sheet/CSV 表头和必需字段'));
     };
 
     request.onerror = () => {
