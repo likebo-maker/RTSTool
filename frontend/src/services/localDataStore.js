@@ -22,9 +22,37 @@ export async function saveToolDataset(toolKey, payload) {
   };
   sessionDatasetCache.set(toolKey, record);
 
+  const serverSaved = await saveDatasetToServer(toolKey, record);
+  const browserSaved = await saveDatasetToBrowser(toolKey, record);
+  return serverSaved || browserSaved;
+}
+
+export async function loadToolDataset(toolKey) {
+  const sessionRecord = sessionDatasetCache.get(toolKey);
+  if (sessionRecord) return sessionRecord;
+
+  const serverRecord = await loadDatasetFromServer(toolKey);
+  if (serverRecord) {
+    rememberLoadedDataset(toolKey, serverRecord);
+    await saveDatasetToBrowser(toolKey, serverRecord);
+    return serverRecord;
+  }
+
+  const browserRecord = await loadDatasetFromBrowser(toolKey);
+  if (browserRecord) {
+    rememberLoadedDataset(toolKey, browserRecord);
+    await saveDatasetToServer(toolKey, browserRecord);
+    return browserRecord;
+  }
+
+  return null;
+}
+
+async function saveDatasetToBrowser(toolKey, record) {
   try {
-    const db = await openDatasetDb();
+    await openDatasetDb();
     await runStoreRequest('readwrite', (store) => store.put(record));
+    saveDatasetToLocalStorage(toolKey, record);
     return true;
   } catch (error) {
     console.warn(`IndexedDB 保存失败，降级到 localStorage：${toolKey}`, error);
@@ -32,17 +60,46 @@ export async function saveToolDataset(toolKey, payload) {
   }
 }
 
-export async function loadToolDataset(toolKey) {
-  const sessionRecord = sessionDatasetCache.get(toolKey);
-  if (sessionRecord) return sessionRecord;
-
+async function loadDatasetFromBrowser(toolKey) {
   try {
-    const db = await openDatasetDb();
+    await openDatasetDb();
     const record = await runStoreRequest('readonly', (store) => store.get(toolKey));
-    return rememberLoadedDataset(toolKey, record || loadDatasetFromLocalStorage(toolKey));
+    return record || loadDatasetFromLocalStorage(toolKey);
   } catch (error) {
     console.warn(`IndexedDB 读取失败，尝试 localStorage：${toolKey}`, error);
-    return rememberLoadedDataset(toolKey, loadDatasetFromLocalStorage(toolKey));
+    return loadDatasetFromLocalStorage(toolKey);
+  }
+}
+
+async function saveDatasetToServer(toolKey, record) {
+  try {
+    const response = await fetch(`/api/local-datasets/${encodeURIComponent(toolKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record)
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return true;
+  } catch (error) {
+    console.warn(`本地数据服务保存失败，降级到浏览器存储：${toolKey}`, error);
+    return false;
+  }
+}
+
+async function loadDatasetFromServer(toolKey) {
+  try {
+    const response = await fetch(`/api/local-datasets/${encodeURIComponent(toolKey)}`);
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const record = await response.json();
+    return record?.payload ? record : null;
+  } catch (error) {
+    console.warn(`本地数据服务读取失败，尝试浏览器存储：${toolKey}`, error);
+    return null;
   }
 }
 

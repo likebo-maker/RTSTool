@@ -17,8 +17,9 @@
 
   <LoginView v-else-if="!isAuthenticated" @login-success="handleLoginSuccess" />
 
-  <div v-else class="app-shell">
+  <div v-else class="app-shell" :class="{ 'browser-fullscreen-mode': isBrowserFullscreen }">
     <Sidebar
+      v-if="!isBrowserFullscreen"
       :collapsed="sidebarCollapsed"
       :active-tool="activeTool"
       :license-info="licenseStatusInfo"
@@ -29,12 +30,13 @@
 
     <div class="app-frame">
       <TopBar
+        v-if="!isBrowserFullscreen"
         :license-info="licenseStatusInfo"
         @show-disclaimer="openDisclaimer('view')"
         @show-license-center="selectTool('license-center')"
       />
 
-      <main class="main-content">
+      <main class="main-content" :class="{ 'browser-fullscreen-content': isBrowserFullscreen }">
         <UnauthorizedState
           v-if="routeBlocked"
           :feature-name="activeToolName"
@@ -83,10 +85,23 @@
           @status-change="handleStatusChange"
           @log="appendLog"
         />
-        <template v-else-if="activeTool === 'service-qualification-map'"></template>
+        <ServiceQualificationMap
+          v-else-if="activeTool === 'service-qualification-map'"
+          :active="activeTool === 'service-qualification-map'"
+          :can-export-excel="canExportExcel"
+          :fullscreen-active="isBrowserFullscreen && activeTool === 'service-qualification-map'"
+          @enter-fullscreen="enterBrowserFullscreen"
+          @exit-fullscreen="exitBrowserFullscreen"
+          @feature-blocked="showUnauthorizedFeature"
+          @status-change="handleStatusChange"
+          @log="appendLog"
+        />
         <TrainingCoverageMap
           v-else-if="activeTool === 'training-coverage-map'"
           :can-export-excel="canExportExcel"
+          :fullscreen-active="isBrowserFullscreen && activeTool === 'training-coverage-map'"
+          @enter-fullscreen="enterBrowserFullscreen"
+          @exit-fullscreen="exitBrowserFullscreen"
           @feature-blocked="showUnauthorizedFeature"
           @status-change="handleStatusChange"
           @log="appendLog"
@@ -102,18 +117,10 @@
           :tool-key="activeTool"
           @status-change="handleStatusChange"
         />
-        <ServiceQualificationMap
-          v-if="!routeBlocked && (serviceQualificationMounted || activeTool === 'service-qualification-map')"
-          v-show="serviceQualificationVisible"
-          :active="serviceQualificationVisible"
-          :can-export-excel="canExportExcel"
-          @feature-blocked="showUnauthorizedFeature"
-          @status-change="handleStatusChange"
-          @log="appendLog"
-        />
       </main>
 
       <StatusBar
+        v-if="!isBrowserFullscreen"
         :status="runtimeStatus"
         :logs="logs"
         :version="brandConfig.version"
@@ -135,10 +142,20 @@
     @close="unauthorizedModal.visible = false"
     @open-license-center="openLicenseCenterFromModal"
   />
+
+  <Transition name="disclaimer-fade">
+    <div v-if="fullscreenMessage" class="fullscreen-message-toast">
+      <div>
+        <strong>无法进入浏览器全屏</strong>
+        <span>{{ fullscreenMessage }}</span>
+      </div>
+      <button type="button" @click="fullscreenMessage = ''">关闭</button>
+    </div>
+  </Transition>
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import LoginView from './components/LoginView.vue';
 import LicenseActivationView from './components/LicenseActivationView.vue';
 import SecurityDisclaimerModal from './components/SecurityDisclaimerModal.vue';
@@ -175,7 +192,8 @@ const licenseRequired = ref(false);
 const licenseAuthorized = ref(false);
 const licenseStatusInfo = ref({});
 const licenseBootMessage = ref('正在读取本机授权状态...');
-const serviceQualificationMounted = ref(false);
+const isBrowserFullscreen = ref(false);
+const fullscreenMessage = ref('');
 const unauthorizedModal = reactive({
   visible: false,
   featureName: ''
@@ -185,15 +203,24 @@ const licenseExpired = computed(() => isLicenseExpired(licenseStatusInfo.value))
 const routeBlocked = computed(() => !hasToolAccess(licenseStatusInfo.value, activeTool.value));
 const activeToolName = computed(() => toolFeatureLabel(activeTool.value));
 const canExportExcel = computed(() => hasFeature(licenseStatusInfo.value, FEATURES.EXPORT_EXCEL));
-const serviceQualificationVisible = computed(() => !routeBlocked.value && activeTool.value === 'service-qualification-map');
+const fullscreenToolKeys = new Set(['service-qualification-map', 'training-coverage-map']);
+const fullscreenSupportedTool = computed(() => fullscreenToolKeys.has(activeTool.value) && !routeBlocked.value);
 
 fetchLicenseStatus();
+
+onMounted(() => {
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('fullscreenchange', handleFullscreenChange);
+});
 
 watch(
   activeTool,
   (toolKey) => {
-    if (toolKey === 'service-qualification-map') {
-      serviceQualificationMounted.value = true;
+    if (isBrowserFullscreen.value && !fullscreenToolKeys.has(toolKey)) {
+      exitBrowserFullscreen();
     }
   },
   { immediate: true }
@@ -235,6 +262,9 @@ function showUnauthorizedFeature(featureName) {
 
 function openLicenseCenterFromModal() {
   unauthorizedModal.visible = false;
+  if (isBrowserFullscreen.value) {
+    exitBrowserFullscreen();
+  }
   activeTool.value = 'license-center';
 }
 
@@ -318,5 +348,47 @@ function handleLicenseActivated(info) {
   licenseAuthorized.value = true;
   licenseReady.value = true;
   activeTool.value = 'license-center';
+}
+
+async function enterBrowserFullscreen() {
+  fullscreenMessage.value = '';
+  if (!fullscreenSupportedTool.value) {
+    fullscreenMessage.value = '当前页面不支持全屏工作模式。';
+    return;
+  }
+
+  try {
+    const target = document.documentElement;
+    if (!document.fullscreenElement) {
+      await target.requestFullscreen();
+    }
+    isBrowserFullscreen.value = true;
+    runtimeStatus.value = '已进入浏览器全屏工作模式';
+  } catch (error) {
+    fullscreenMessage.value = '请允许浏览器全屏，或按 F11 进入全屏模式。';
+    appendLog(error?.message ? `浏览器全屏被阻止：${error.message}` : '浏览器全屏被阻止');
+  }
+}
+
+async function exitBrowserFullscreen() {
+  fullscreenMessage.value = '';
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    }
+    isBrowserFullscreen.value = false;
+    runtimeStatus.value = '已退出浏览器全屏工作模式';
+  } catch (error) {
+    fullscreenMessage.value = '退出全屏失败，请按 ESC 或 F11 返回普通模式。';
+    appendLog(error?.message ? `退出浏览器全屏失败：${error.message}` : '退出浏览器全屏失败');
+  }
+}
+
+function handleFullscreenChange() {
+  const fullscreenActive = Boolean(document.fullscreenElement);
+  isBrowserFullscreen.value = fullscreenActive && fullscreenSupportedTool.value;
+  if (!fullscreenActive && runtimeStatus.value === '已进入浏览器全屏工作模式') {
+    runtimeStatus.value = '已退出浏览器全屏工作模式';
+  }
 }
 </script>

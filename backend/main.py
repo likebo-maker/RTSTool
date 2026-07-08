@@ -5,6 +5,7 @@ import re
 import socket
 import uuid
 import sys
+import json
 import threading
 import webbrowser
 from pathlib import Path
@@ -91,6 +92,12 @@ def _resolve_output_dir() -> Path:
     return Path(__file__).resolve().parent / "output"
 
 
+def _resolve_dataset_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "data" / "local_datasets"
+    return Path(__file__).resolve().parent.parent / "data" / "local_datasets"
+
+
 def _find_free_port(start_port: int = 8000, attempts: int = 50) -> int:
     for port in range(start_port, start_port + attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -120,6 +127,8 @@ def _prepare_runtime_streams() -> None:
 FRONTEND_DIST_DIR = _resolve_frontend_dist_dir()
 OUTPUT_DIR = _resolve_output_dir()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+DATASET_DIR = _resolve_dataset_dir()
+DATASET_DIR.mkdir(parents=True, exist_ok=True)
 
 WORK_ORDER_SHEET_NAME = "工单报表 - 已筛选"
 TARGET_PRODUCT_LINE = "IVD"
@@ -3057,6 +3066,38 @@ def license_verify() -> dict[str, Any]:
     except LicenseError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return {"success": True, "license": info}
+
+
+def _dataset_file_path(tool_key: str) -> Path:
+    if not re.fullmatch(r"[a-z0-9_]+", tool_key or ""):
+        raise HTTPException(status_code=400, detail="无效的数据集标识")
+    return DATASET_DIR / f"{tool_key}.json"
+
+
+@app.get("/api/local-datasets/{tool_key}")
+def load_local_dataset(tool_key: str) -> dict[str, Any]:
+    dataset_path = _dataset_file_path(tool_key)
+    if not dataset_path.exists():
+        raise HTTPException(status_code=404, detail="本地数据集不存在")
+
+    try:
+        return json.loads(dataset_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="本地数据集已损坏，请重新导入") from exc
+
+
+@app.post("/api/local-datasets/{tool_key}")
+def save_local_dataset(tool_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+    dataset_path = _dataset_file_path(tool_key)
+    record = {
+        "toolKey": tool_key,
+        "payload": payload.get("payload", payload),
+        "updatedAt": str(payload.get("updatedAt") or pd.Timestamp.now().isoformat()),
+    }
+    temp_path = dataset_path.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    temp_path.replace(dataset_path)
+    return {"success": True, "updatedAt": record["updatedAt"]}
 
 
 @app.post("/api/process")

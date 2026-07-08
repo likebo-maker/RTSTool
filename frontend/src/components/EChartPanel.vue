@@ -75,11 +75,16 @@ const props = defineProps({
   showHeader: {
     type: Boolean,
     default: true
+  },
+  highlightIndex: {
+    type: Number,
+    default: -1
   }
 });
 
 const chartRef = ref(null);
 let chartInstance = null;
+let previousHighlightIndex = -1;
 
 const hasOption = computed(() => Boolean(props.option));
 
@@ -118,6 +123,13 @@ watch(
   }
 );
 
+watch(
+  () => props.highlightIndex,
+  () => {
+    applyHighlight();
+  }
+);
+
 function renderChart() {
   if (props.loading || !props.option || !chartRef.value) {
     disposeChart();
@@ -129,6 +141,12 @@ function renderChart() {
   }
   chartInstance.setOption(props.option, true);
   chartInstance.resize();
+  previousHighlightIndex = -1;
+  applyHighlight();
+  requestAnimationFrame(() => {
+    chartInstance?.resize();
+    applyHighlight();
+  });
 }
 
 function handleResize() {
@@ -139,5 +157,33 @@ function disposeChart() {
   if (!chartInstance) return;
   chartInstance.dispose();
   chartInstance = null;
+  previousHighlightIndex = -1;
+}
+
+function applyHighlight() {
+  if (!chartInstance) return;
+  if (previousHighlightIndex >= 0) {
+    chartInstance.dispatchAction({
+      type: 'downplay',
+      seriesIndex: 0,
+      dataIndex: previousHighlightIndex
+    });
+  }
+  if (props.highlightIndex < 0) {
+    chartInstance.dispatchAction({ type: 'hideTip' });
+    previousHighlightIndex = -1;
+    return;
+  }
+  chartInstance.dispatchAction({
+    type: 'highlight',
+    seriesIndex: 0,
+    dataIndex: props.highlightIndex
+  });
+  chartInstance.dispatchAction({
+    type: 'showTip',
+    seriesIndex: 0,
+    dataIndex: props.highlightIndex
+  });
+  previousHighlightIndex = props.highlightIndex;
 }
 </script>

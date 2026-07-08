@@ -25,15 +25,20 @@ export function collectTrainingOptions(records) {
 
 export function applyTrainingFilters(records, filters = DEFAULT_TRAINING_FILTERS) {
   return records.filter((record) => {
-    if (filters.regions?.length && !filters.regions.includes(record.mappedRegion)) return false;
-    if (filters.branches?.length && !filters.branches.includes(record.branch)) return false;
-    if (filters.productLines?.length && !filters.productLines.includes(record.productLine)) return false;
-    if (filters.cycles?.length && !filters.cycles.includes(record.trainingCycle)) return false;
+    if (!matchesMultiSelect(record.mappedRegion, filters.regions)) return false;
+    if (!matchesMultiSelect(record.branch, filters.branches)) return false;
+    if (!matchesMultiSelect(record.productLine, filters.productLines)) return false;
+    if (!matchesMultiSelect(record.trainingCycle, filters.cycles)) return false;
     if (filters.result !== '全部' && record.trainingResult !== filters.result) return false;
-    if (filters.trainingCenters?.length && !filters.trainingCenters.includes(record.trainingCenter)) return false;
-    if (filters.trainingTypes?.length && !filters.trainingTypes.includes(record.trainingType)) return false;
+    if (!matchesMultiSelect(record.trainingCenter, filters.trainingCenters)) return false;
+    if (!matchesMultiSelect(record.trainingType, filters.trainingTypes)) return false;
     return true;
   });
+}
+
+function matchesMultiSelect(value, selectedValues) {
+  if (!Array.isArray(selectedValues)) return true;
+  return selectedValues.length > 0 && selectedValues.includes(value);
 }
 
 export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTERS) {
@@ -67,13 +72,11 @@ export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTE
       })
       .filter(Boolean),
     topBranches: [...branchStats]
-      .sort((left, right) => right.recordCount - left.recordCount || right.traineeCount - left.traineeCount)
-      .slice(0, 10),
+      .sort((left, right) => right.recordCount - left.recordCount || right.traineeCount - left.traineeCount),
     riskBranches: [...branchStats]
-      .sort((left, right) => right.failCount - left.failCount || left.passRateValue - right.passRateValue)
-      .slice(0, 10),
-    productLineDistribution: aggregateSeries(filteredRecords, 'productLine', 8),
-    trainingTypeDistribution: aggregateSeries(filteredRecords, 'trainingType', 8),
+      .sort((left, right) => right.failCount - left.failCount || left.passRateValue - right.passRateValue),
+    productLineDistribution: aggregateSeries(filteredRecords, 'productLine'),
+    trainingTypeDistribution: aggregateSeries(filteredRecords, 'trainingType'),
     trendSeries: buildTrainingTrendSeries(filteredRecords),
     previewRows: filteredRecords.slice(0, 500)
   };

@@ -1,9 +1,14 @@
 <template>
-  <div class="tool-page qualification-page">
-    <section class="tool-header qualification-tool-header">
+  <div
+    ref="pageRef"
+    class="tool-page qualification-page"
+    :class="{ 'fullscreen-workspace': fullscreenActive, 'fullscreen-filter-open': fullscreenFiltersOpen, 'presentation-mode': presentationCarouselEnabled }"
+    @mousemove="handleFullscreenMouseMove"
+  >
+    <section v-if="!fullscreenActive" class="tool-header qualification-tool-header">
       <div class="qualification-tool-heading">
         <div class="tool-icon">
-          <Map :size="24" />
+          <MapIcon :size="24" />
         </div>
         <div>
           <p class="section-kicker">SERVICE QUALIFICATION MAP</p>
@@ -40,10 +45,73 @@
           <RotateCcw :size="18" />
           <span>重置筛选</span>
         </button>
+        <button class="ghost-button fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen">
+          <Minimize2 v-if="fullscreenActive" :size="18" />
+          <Maximize2 v-else :size="18" />
+          <span>{{ fullscreenActive ? '退出全屏' : '浏览器全屏' }}</span>
+        </button>
       </div>
     </section>
 
-    <section class="glass-panel qualification-filter-panel">
+    <section v-else class="fullscreen-training-toolbar">
+      <div class="fullscreen-training-title">
+        <strong>中国区人员服务资质地图</strong>
+        <span>Service Qualification Map</span>
+      </div>
+      <div
+        class="fullscreen-training-actions"
+        :class="{ visible: fullscreenControlsVisible }"
+        @mouseenter="handleFullscreenControlsMouseEnter"
+        @mouseleave="handleFullscreenControlsMouseLeave"
+        @mousemove.stop
+        @click.capture="handleFullscreenControlsClick"
+      >
+        <input
+          ref="fileInputRef"
+          class="hidden-file-input"
+          type="file"
+          accept=".xlsx,.xls"
+          multiple
+          @change="handleFileImport"
+        />
+        <button class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
+          <Upload :size="16" />
+          <span>导入资质表</span>
+        </button>
+        <button
+          class="ghost-button compact"
+          :class="{ locked: !canExportExcel }"
+          type="button"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecords.length)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+          @click="exportCurrentResult"
+        >
+          <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="16" />
+          <Download v-else :size="16" />
+          <span>导出当前结果</span>
+        </button>
+        <button class="ghost-button compact" :class="{ active: fullscreenFiltersOpen }" type="button" @click="fullscreenFiltersOpen = !fullscreenFiltersOpen">
+          <Search :size="16" />
+          <span>筛选器</span>
+        </button>
+        <button
+          class="ghost-button compact"
+          :class="{ active: presentationCarouselEnabled && !carouselPaused }"
+          type="button"
+          @click="toggleCarouselPaused"
+        >
+          <Play v-if="carouselPaused" :size="16" />
+          <Pause v-else :size="16" />
+          <span>自动轮播（{{ carouselPaused ? '暂停' : '开启' }}）</span>
+        </button>
+        <button class="ghost-button compact fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen">
+          <Minimize2 :size="16" />
+          <span>退出全屏</span>
+        </button>
+      </div>
+    </section>
+
+    <section v-if="!fullscreenActive || fullscreenFiltersOpen" class="glass-panel qualification-filter-panel">
       <div class="panel-title-row">
         <div>
           <p class="section-kicker">Filter Controls</p>
@@ -116,7 +184,7 @@
       </div>
     </section>
 
-    <section class="qualification-metric-grid">
+    <section v-if="!fullscreenActive" class="qualification-metric-grid">
       <article v-for="metric in metricCards" :key="metric.key" class="metric-card" :class="metric.tone">
         <component :is="metric.icon" :size="20" />
         <span class="qualification-metric-label">{{ metric.label }}</span>
@@ -125,15 +193,27 @@
     </section>
 
     <section class="qualification-main-grid">
-      <QualificationAmap
-        :points="dashboard.mapPoints"
-        :loading="loading"
-        :active="props.active"
-        :selected-branch="selectedBranch"
-        :selected-regions="appliedFilters.regions"
-        :empty-text="emptyStateText"
-        @select-branch="openBranchDetail"
-      />
+      <div class="training-map-stage" @click="pauseAutoAnalysisForInteraction">
+        <section v-if="fullscreenActive" class="fullscreen-kpi-overlay">
+          <article v-for="metric in fullscreenMetricCards" :key="`fullscreen-${metric.key}`" class="fullscreen-kpi-card" :class="metric.tone">
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+          </article>
+        </section>
+        <QualificationAmap
+          :points="dashboard.mapPoints"
+          :loading="loading"
+          :active="props.active"
+          :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen"
+          :selected-branch="fullscreenActive ? focusedBranch : selectedBranch"
+          :presentation-mode="fullscreenActive && presentationCarouselEnabled"
+          :focused-branch="focusedBranch"
+          :label-branches="permanentLabelBranches"
+          :selected-regions="appliedFilters.regions"
+          :empty-text="emptyStateText"
+          @select-branch="handleMapBranchSelect"
+        />
+      </div>
 
       <aside class="qualification-side-panel">
         <section class="glass-panel qualification-side-tabs">
@@ -144,12 +224,12 @@
             </div>
             <div class="qualification-tab-nav">
               <button
-                v-for="tab in sideTabs"
+                v-for="tab in visibleSideTabs"
                 :key="tab.key"
                 class="qualification-tab-button"
                 :class="{ active: activeSideTab === tab.key }"
                 type="button"
-                @click="activeSideTab = tab.key"
+                @click="selectSideTab(tab.key)"
               >
                 {{ tab.label }}
               </button>
@@ -162,17 +242,26 @@
                 <span>分公司有效资质 TOP10</span>
                 <strong>{{ dashboard.topValidBranches.length }}</strong>
               </div>
-              <div v-if="dashboard.topValidBranches.length" class="qualification-rank-list scrollable">
-                <button
-                  v-for="(item, index) in dashboard.topValidBranches"
-                  :key="item.branch"
-                  class="qualification-rank-row"
-                  type="button"
-                  @click="openBranchDetail(item.branch)"
-                >
-                  <span class="rank-index">{{ index + 1 }}</span>
-                  <span class="rank-branch">{{ item.branch }}</span>
-                  <strong>{{ item.validQualifications }}</strong>
+              <div v-if="dashboard.topValidBranches.length" class="qualification-expandable-block">
+                <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.branch || fullscreenActive }">
+                  <button
+                    v-for="(item, index) in displayedValidBranches"
+                    :key="item.branch"
+                    class="qualification-rank-row"
+                    :class="{ focused: activeSideTab === 'branch' && index === sideAnalysisIndex }"
+                    :data-branch="item.branch"
+                    type="button"
+                    @click="openBranchDetail(item.branch)"
+                  >
+                    <span class="rank-index">{{ index + 1 }}</span>
+                    <span class="rank-branch">{{ item.branch }}</span>
+                    <strong>{{ item.validQualifications }}</strong>
+                  </button>
+                </div>
+                <button v-if="!fullscreenActive && dashboard.topValidBranches.length > TOP_LIST_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('branch')">
+                  <ChevronUp v-if="expandedSidePanels.branch" :size="16" />
+                  <ChevronDown v-else :size="16" />
+                  <span>{{ expandedSidePanels.branch ? '收起，仅显示TOP10' : `展开全部 ${dashboard.topValidBranches.length}项` }}</span>
                 </button>
               </div>
               <div v-else class="chart-empty-state compact in-tab">
@@ -186,19 +275,28 @@
                 <span>资质风险 TOP10</span>
                 <strong>{{ dashboard.topRiskBranches.length }}</strong>
               </div>
-              <div v-if="dashboard.topRiskBranches.length" class="qualification-rank-list scrollable">
-                <button
-                  v-for="(item, index) in dashboard.topRiskBranches"
-                  :key="`${item.branch}-risk`"
-                  class="qualification-risk-row"
-                  type="button"
-                  @click="openBranchDetail(item.branch)"
-                >
-                  <span class="rank-index">{{ index + 1 }}</span>
-                  <div class="rank-branch-copy">
-                    <strong>{{ item.branch }}</strong>
-                    <span>30天内到期 {{ item.expiring30 }} / 已过期 {{ item.expiredQualifications }}</span>
-                  </div>
+              <div v-if="dashboard.topRiskBranches.length" class="qualification-expandable-block">
+                <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.risk || fullscreenActive }">
+                  <button
+                    v-for="(item, index) in displayedRiskBranches"
+                    :key="`${item.branch}-risk`"
+                    class="qualification-risk-row"
+                    :class="{ focused: activeSideTab === 'risk' && index === sideAnalysisIndex }"
+                    :data-branch="item.branch"
+                    type="button"
+                    @click="openBranchDetail(item.branch)"
+                  >
+                    <span class="rank-index">{{ index + 1 }}</span>
+                    <div class="rank-branch-copy">
+                      <strong>{{ item.branch }}</strong>
+                      <span>30天内到期 {{ item.expiring30 }} / 已过期 {{ item.expiredQualifications }}</span>
+                    </div>
+                  </button>
+                </div>
+                <button v-if="!fullscreenActive && dashboard.topRiskBranches.length > TOP_LIST_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('risk')">
+                  <ChevronUp v-if="expandedSidePanels.risk" :size="16" />
+                  <ChevronDown v-else :size="16" />
+                  <span>{{ expandedSidePanels.risk ? '收起，仅显示TOP10' : `展开全部 ${dashboard.topRiskBranches.length}项` }}</span>
                 </button>
               </div>
               <div v-else class="chart-empty-state compact in-tab">
@@ -207,28 +305,98 @@
               </div>
             </div>
 
-            <div v-else class="qualification-tab-panel analysis">
-              <EChartPanel
-                title="产品线资质分布"
-                kicker="Product Line"
-                :option="productLineBarOption"
-                :loading="loading"
-                :active="props.active"
-                height="248px"
-                :empty-text="emptyStateText"
-                panelless
-              />
-              <div class="qualification-tab-analysis-grid">
+            <div v-else-if="activeSideTab === 'productLine'" class="qualification-tab-panel analysis single">
+              <div class="qualification-expandable-chart" :class="{ expanded: expandedSidePanels.productLine }">
+                <EChartPanel
+                  title="产品线资质分布"
+                  kicker="Product Line"
+                  :option="productLineBarOption"
+                  :loading="loading"
+                  :active="props.active"
+                  :height="productLineChartHeight"
+                  :highlight-index="activeSideTab === 'productLine' ? sideChartHighlightIndex : -1"
+                  :empty-text="emptyStateText"
+                  panelless
+                />
+              </div>
+              <button v-if="!fullscreenActive && dashboard.productLineDistribution.length > CHART_TOP_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('productLine')">
+                <ChevronUp v-if="expandedSidePanels.productLine" :size="16" />
+                <ChevronDown v-else :size="16" />
+                <span>{{ expandedSidePanels.productLine ? '收起，仅显示TOP10' : `展开全部 ${dashboard.productLineDistribution.length}项` }}</span>
+              </button>
+            </div>
+
+            <div v-else-if="activeSideTab === 'qualificationType'" class="qualification-tab-panel analysis single">
+              <div class="qualification-expandable-chart compact" :class="{ expanded: expandedSidePanels.qualificationType }">
                 <EChartPanel
                   title="资质类型分布"
                   kicker="Qualification Type"
                   :option="qualificationTypeBarOption"
                   :loading="loading"
                   :active="props.active"
-                  height="212px"
+                  :height="qualificationTypeChartHeight"
+                  :highlight-index="activeSideTab === 'qualificationType' ? sideChartHighlightIndex : -1"
                   :empty-text="'暂无资质类型分布数据'"
                   panelless
                 />
+              </div>
+              <button v-if="!fullscreenActive && dashboard.qualificationTypeDistribution.length > CHART_TOP_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('qualificationType')">
+                <ChevronUp v-if="expandedSidePanels.qualificationType" :size="16" />
+                <ChevronDown v-else :size="16" />
+                <span>{{ expandedSidePanels.qualificationType ? '收起，仅显示TOP10' : `展开全部 ${dashboard.qualificationTypeDistribution.length}项` }}</span>
+              </button>
+            </div>
+
+            <div v-else-if="activeSideTab === 'expiryTrend'" class="qualification-tab-panel analysis single">
+              <EChartPanel
+                title="到期趋势分析"
+                kicker="Expiry Analysis"
+                :option="expiryTrendOption"
+                :loading="loading"
+                :active="props.active"
+                height="248px"
+                :highlight-index="activeSideTab === 'expiryTrend' ? sideChartHighlightIndex : -1"
+                :empty-text="'暂无到期风险数据'"
+                panelless
+              />
+            </div>
+
+            <div v-else class="qualification-tab-panel analysis">
+              <div class="qualification-expandable-chart" :class="{ expanded: expandedSidePanels.productLine }">
+                <EChartPanel
+                  title="产品线资质分布"
+                  kicker="Product Line"
+                  :option="productLineBarOption"
+                  :loading="loading"
+                  :active="props.active"
+                  :height="productLineChartHeight"
+                  :empty-text="emptyStateText"
+                  panelless
+                />
+              </div>
+              <button v-if="dashboard.productLineDistribution.length > CHART_TOP_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('productLine')">
+                <ChevronUp v-if="expandedSidePanels.productLine" :size="16" />
+                <ChevronDown v-else :size="16" />
+                <span>{{ expandedSidePanels.productLine ? '收起，仅显示TOP10' : `展开全部 ${dashboard.productLineDistribution.length}项` }}</span>
+              </button>
+              <div class="qualification-tab-analysis-grid">
+                <div class="qualification-expandable-chart compact" :class="{ expanded: expandedSidePanels.qualificationType }">
+                  <EChartPanel
+                    title="资质类型分布"
+                    kicker="Qualification Type"
+                    :option="qualificationTypeBarOption"
+                    :loading="loading"
+                    :active="props.active"
+                    :height="qualificationTypeChartHeight"
+                    :empty-text="'暂无资质类型分布数据'"
+                    panelless
+                  />
+                </div>
+                <button v-if="dashboard.qualificationTypeDistribution.length > CHART_TOP_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('qualificationType')">
+                  <ChevronUp v-if="expandedSidePanels.qualificationType" :size="16" />
+                  <ChevronDown v-else :size="16" />
+                  <span>{{ expandedSidePanels.qualificationType ? '收起，仅显示TOP10' : `展开全部 ${dashboard.qualificationTypeDistribution.length}项` }}</span>
+                </button>
                 <EChartPanel
                   title="到期趋势分析"
                   kicker="Expiry Analysis"
@@ -244,60 +412,6 @@
           </div>
         </section>
       </aside>
-    </section>
-
-    <section class="glass-panel qualification-table-panel" :class="{ collapsed: !detailTableExpanded }">
-      <div class="panel-title-row">
-        <div>
-          <p class="section-kicker">Filtered Detail</p>
-          <h2>资质明细表</h2>
-        </div>
-        <div class="qualification-table-actions">
-          <span class="preview-count">共 {{ dashboard.filteredRecords.length }} 条</span>
-          <button class="ghost-button compact" type="button" @click="detailTableExpanded = !detailTableExpanded">
-            <span>{{ detailTableExpanded ? '收起明细表' : '展开明细表' }}</span>
-          </button>
-        </div>
-      </div>
-
-      <div v-if="!detailTableExpanded" class="qualification-collapsed-summary">
-        <span>资质明细表默认折叠，避免占用首屏空间。</span>
-        <strong>{{ dashboard.filteredRecords.length }} 条记录</strong>
-      </div>
-      <div v-else-if="dashboard.filteredRecords.length" class="table-shell qualification-table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th>姓名</th>
-              <th>分公司</th>
-              <th>产品线</th>
-              <th>机器型号</th>
-              <th>服务资质类型</th>
-              <th>资质有效期</th>
-              <th>资质状态</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in dashboard.previewRows" :key="row.id">
-              <td>{{ row.personName }}</td>
-              <td>{{ row.branch }}</td>
-              <td>{{ row.productLine }}</td>
-              <td>{{ row.machineModel }}</td>
-              <td>{{ row.qualificationType }}</td>
-              <td>{{ row.expiryDate }}</td>
-              <td>
-                <span class="qualification-status-badge" :class="statusClass(row.qualificationStatus)">
-                  {{ row.qualificationStatus }}
-                </span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-else class="empty-preview">
-        <TableProperties :size="26" />
-        <span>{{ emptyStateText }}</span>
-      </div>
     </section>
 
     <Transition name="disclaimer-fade">
@@ -442,16 +556,22 @@
 </template>
 
 <script setup>
-import { computed, markRaw, nextTick, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue';
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue';
 import {
   AlertTriangle,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
   CircleX,
   Download,
   Eraser,
   ListOrdered,
   LoaderCircle,
-  Map,
+  Map as MapIcon,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play,
   RotateCcw,
   Search,
   ShieldAlert,
@@ -486,11 +606,21 @@ const props = defineProps({
   active: {
     type: Boolean,
     default: true
+  },
+  fullscreenActive: {
+    type: Boolean,
+    default: false
   }
 });
 
-const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
+const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen']);
 
+const TOP_LIST_LIMIT = 10;
+const CHART_TOP_LIMIT = 10;
+const MAP_CAROUSEL_INTERVAL_MS = 5000;
+const SIDE_ITEM_INTERVAL_MS = 4000;
+const AUTO_RESUME_DELAY_MS = 30000;
+const pageRef = ref(null);
 const fileInputRef = ref(null);
 const loading = ref(false);
 const restoringView = ref(false);
@@ -501,7 +631,24 @@ const selectedBranch = ref('');
 const detailKeyword = ref('');
 const detailStatus = ref('全部');
 const activeSideTab = ref('branch');
-const detailTableExpanded = ref(false);
+const fullscreenFiltersOpen = ref(false);
+const fullscreenControlsVisible = ref(false);
+const fullscreenControlsHovering = ref(false);
+const presentationCarouselEnabled = ref(false);
+const carouselPaused = ref(false);
+const carouselLocked = ref(false);
+const focusedBranch = ref('');
+const sideAnalysisIndex = ref(0);
+let mapCarouselTimerId = null;
+let sideAnalysisTimerId = null;
+let autoResumeTimerId = null;
+let fullscreenControlsHideTimerId = null;
+const expandedSidePanels = reactive({
+  branch: false,
+  risk: false,
+  productLine: false,
+  qualificationType: false
+});
 const importOverlay = reactive(createImportOverlayState());
 const activeExportKey = ref('');
 const exportFeedback = reactive({
@@ -509,6 +656,10 @@ const exportFeedback = reactive({
   title: '',
   message: ''
 });
+
+function toggleBrowserFullscreen() {
+  emit(props.fullscreenActive ? 'exit-fullscreen' : 'enter-fullscreen');
+}
 
 const draftFilters = reactive(createDefaultFilters());
 const appliedFilters = ref(createDefaultFilters());
@@ -543,18 +694,32 @@ const viewBusyMessage = computed(() => (
     ? '正在恢复上次资质地图数据，请稍候...'
     : '正在刷新地图和图表，请稍候...'
 ));
-const sideTabs = [
+const regularSideTabs = [
   { key: 'branch', label: '分公司TOP10' },
   { key: 'risk', label: '风险TOP10' },
   { key: 'analysis', label: '产品线分布' }
 ];
+const fullscreenSideTabs = [
+  { key: 'branch', label: '公司TOP10' },
+  { key: 'risk', label: '风险TOP10' },
+  { key: 'productLine', label: '产品线分布' },
+  { key: 'qualificationType', label: '资质类型分布' },
+  { key: 'expiryTrend', label: '到期趋势分析' }
+];
+const visibleSideTabs = computed(() => (props.fullscreenActive ? fullscreenSideTabs : regularSideTabs));
 
 const metricCards = computed(() => [
-  { key: 'totalPeople', label: '总持证人数', value: dashboard.value.summary.totalPeople, icon: Users, tone: 'blue' },
   { key: 'validQualifications', label: '有效资质总数', value: dashboard.value.summary.validQualifications, icon: ShieldCheck, tone: 'cyan' },
   { key: 'expiringSoon', label: '即将到期资质', value: dashboard.value.summary.expiringSoon, icon: CalendarClock, tone: 'orange' },
   { key: 'expiredQualifications', label: '已过期资质', value: dashboard.value.summary.expiredQualifications, icon: CircleX, tone: 'red' },
   { key: 'coveredBranches', label: '覆盖分公司数', value: dashboard.value.summary.coveredBranches, icon: WalletCards, tone: 'green' }
+]);
+const fullscreenMetricCards = computed(() => [
+  { key: 'validQualifications', label: '有效资质', value: dashboard.value.summary.validQualifications, tone: 'cyan' },
+  { key: 'totalPeople', label: '持证人数', value: dashboard.value.summary.totalPeople, tone: 'blue' },
+  { key: 'coveredBranches', label: '覆盖分公司', value: dashboard.value.summary.coveredBranches, tone: 'green' },
+  { key: 'expiringSoon', label: '即将到期', value: dashboard.value.summary.expiringSoon, tone: 'orange' },
+  { key: 'expiredQualifications', label: '已过期', value: dashboard.value.summary.expiredQualifications, tone: 'red' }
 ]);
 
 const branchDetail = computed(() => {
@@ -585,14 +750,71 @@ const branchMetricCards = computed(() => {
   ];
 });
 
-const productLineBarOption = computed(() => buildBarOption(dashboard.value.productLineDistribution, '有效资质数量'));
-const qualificationTypeBarOption = computed(() => buildTopTypeBarOption(dashboard.value.qualificationTypeDistribution));
+const productLineBarOption = computed(() => buildBarOption(dashboard.value.productLineDistribution, '有效资质数量', expandedSidePanels.productLine));
+const qualificationTypeBarOption = computed(() => buildTopTypeBarOption(dashboard.value.qualificationTypeDistribution, expandedSidePanels.qualificationType));
 const expiryTrendOption = computed(() => buildTrendOption(dashboard.value.expiryTrend));
 const branchProductLineOption = computed(() => buildBarOption(branchDetail.value.productLineDistribution || [], '有效资质'));
 const branchTypeOption = computed(() => buildDonutOption(branchDetail.value.qualificationTypeDistribution || []));
 const branchRiskOption = computed(() => buildTrendOption(branchDetail.value.expiryDistribution || []));
+const displayedValidBranches = computed(() => (props.fullscreenActive
+  ? dashboard.value.topValidBranches
+  : getVisibleRows(dashboard.value.topValidBranches, expandedSidePanels.branch, TOP_LIST_LIMIT)));
+const displayedRiskBranches = computed(() => (props.fullscreenActive
+  ? dashboard.value.topRiskBranches
+  : getVisibleRows(dashboard.value.topRiskBranches, expandedSidePanels.risk, TOP_LIST_LIMIT)));
+const productLineChartRows = computed(() => getDistributionRows(dashboard.value.productLineDistribution, expandedSidePanels.productLine, CHART_TOP_LIMIT));
+const qualificationTypeChartRows = computed(() => getDistributionRows(dashboard.value.qualificationTypeDistribution, expandedSidePanels.qualificationType, CHART_TOP_LIMIT));
+const expiryTrendRows = computed(() => (dashboard.value.expiryTrend || [])
+  .map((item, index) => ({ ...item, sourceIndex: index }))
+  .filter((item) => Number(item.value || 0) > 0));
+const productLineChartHeight = computed(() => chartHeightForRows(productLineChartRows.value.length, 248));
+const qualificationTypeChartHeight = computed(() => chartHeightForRows(qualificationTypeChartRows.value.length, 212));
+const permanentLabelBranches = computed(() => {
+  if (!props.fullscreenActive || !presentationCarouselEnabled.value) return [];
+  return focusedBranch.value ? [focusedBranch.value] : [];
+});
+const activeSideRows = computed(() => {
+  if (activeSideTab.value === 'branch') return displayedValidBranches.value;
+  if (activeSideTab.value === 'risk') return displayedRiskBranches.value;
+  if (activeSideTab.value === 'productLine') return productLineChartRows.value;
+  if (activeSideTab.value === 'qualificationType') return qualificationTypeChartRows.value;
+  if (activeSideTab.value === 'expiryTrend') return expiryTrendRows.value;
+  return [];
+});
+const activeSideBranch = computed(() => {
+  if (!['branch', 'risk'].includes(activeSideTab.value)) return '';
+  return activeSideRows.value[sideAnalysisIndex.value]?.branch || '';
+});
+const sideChartHighlightIndex = computed(() => {
+  if (!['productLine', 'qualificationType', 'expiryTrend'].includes(activeSideTab.value)) return -1;
+  const rowCount = activeSideRows.value.length;
+  if (!rowCount || sideAnalysisIndex.value < 0 || sideAnalysisIndex.value >= rowCount) return -1;
+  if (activeSideTab.value === 'expiryTrend') return activeSideRows.value[sideAnalysisIndex.value]?.sourceIndex ?? -1;
+  return rowCount - 1 - sideAnalysisIndex.value;
+});
+const carouselSequence = computed(() => {
+  const mapPointByBranch = new Map(dashboard.value.mapPoints.map((point) => [point.branch, point]));
+  const addUniquePoints = (target, items) => {
+    items.forEach((item) => {
+      const point = mapPointByBranch.get(item.branch);
+      if (point && !target.some((candidate) => candidate.branch === point.branch)) {
+        target.push(point);
+      }
+    });
+  };
+
+  const result = [];
+  addUniquePoints(result, dashboard.value.topValidBranches.slice(0, 10));
+  const riskItems = dashboard.value.topRiskBranches.filter((item) => isRiskPoint(item)).slice(0, 10);
+  addUniquePoints(result, riskItems);
+  addUniquePoints(result, dashboard.value.mapPoints);
+  return result;
+});
 
 watchEffect(() => {
+  if (!props.fullscreenActive && fullscreenFiltersOpen.value) {
+    fullscreenFiltersOpen.value = false;
+  }
   if (!props.active) return;
   if (loading.value) {
     emit('status-change', '资质地图数据处理中');
@@ -604,7 +826,11 @@ watchEffect(() => {
 watch(
   () => props.active,
   async (isActive, wasActive) => {
-    if (!isActive || wasActive !== false || !hasData.value) return;
+    if (!isActive || wasActive !== false) return;
+    if (!hasData.value) {
+      await loadLastDataset();
+      return;
+    }
     reactivatingView.value = true;
     await nextTick();
     window.setTimeout(() => {
@@ -615,9 +841,252 @@ watch(
 
 onMounted(loadLastDataset);
 
+onBeforeUnmount(() => {
+  stopAutoAnalysisTimers();
+  clearAutoResumeTimer();
+  clearFullscreenControlsTimer();
+});
+
+watch(
+  () => props.fullscreenActive,
+  (isFullscreen) => {
+    if (isFullscreen) {
+      fullscreenControlsVisible.value = false;
+      fullscreenControlsHovering.value = false;
+      clearFullscreenControlsTimer();
+      presentationCarouselEnabled.value = true;
+      carouselPaused.value = false;
+      carouselLocked.value = false;
+      activeSideTab.value = 'branch';
+      sideAnalysisIndex.value = 0;
+      focusFirstCarouselPoint();
+      startAutoAnalysisTimers();
+      return;
+    }
+    presentationCarouselEnabled.value = false;
+    fullscreenControlsVisible.value = false;
+    fullscreenControlsHovering.value = false;
+    carouselPaused.value = false;
+    carouselLocked.value = false;
+    focusedBranch.value = '';
+    sideAnalysisIndex.value = 0;
+    stopAutoAnalysisTimers();
+    clearAutoResumeTimer();
+    clearFullscreenControlsTimer();
+  }
+);
+
+watch(
+  () => carouselSequence.value.map((point) => point.branch).join('|'),
+  () => {
+    if (!props.fullscreenActive || !presentationCarouselEnabled.value) return;
+    if (!carouselSequence.value.some((point) => point.branch === focusedBranch.value)) {
+      focusFirstCarouselPoint();
+    }
+    startAutoAnalysisTimers();
+  }
+);
+
+watch(
+  () => activeSideTab.value,
+  async () => {
+    sideAnalysisIndex.value = 0;
+    await nextTick();
+    scrollActiveSideRowIntoView();
+  }
+);
+
+watch(
+  () => sideAnalysisIndex.value,
+  async () => {
+    await nextTick();
+    scrollActiveSideRowIntoView();
+  }
+);
+
+watch(
+  () => activeSideRows.value.length,
+  (rowCount) => {
+    if (!rowCount) {
+      sideAnalysisIndex.value = 0;
+      return;
+    }
+    if (sideAnalysisIndex.value >= rowCount) {
+      sideAnalysisIndex.value = rowCount - 1;
+    }
+  }
+);
+
 function openImporter() {
   if (interactionDisabled.value) return;
   fileInputRef.value?.click();
+}
+
+function handleFullscreenMouseMove(event) {
+  if (!props.fullscreenActive) return;
+  if (event.clientY < 100) {
+    revealFullscreenControls();
+  }
+}
+
+function revealFullscreenControls() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsVisible.value = true;
+  scheduleFullscreenControlsHide();
+}
+
+function handleFullscreenControlsMouseEnter() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsHovering.value = true;
+  fullscreenControlsVisible.value = true;
+  clearFullscreenControlsTimer();
+}
+
+function handleFullscreenControlsMouseLeave() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsHovering.value = false;
+  scheduleFullscreenControlsHide();
+}
+
+function handleFullscreenControlsClick() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsVisible.value = true;
+  scheduleFullscreenControlsHide();
+}
+
+function scheduleFullscreenControlsHide() {
+  clearFullscreenControlsTimer();
+  if (fullscreenControlsHovering.value) return;
+  fullscreenControlsHideTimerId = window.setTimeout(() => {
+    if (!fullscreenControlsHovering.value) {
+      fullscreenControlsVisible.value = false;
+    }
+  }, 3000);
+}
+
+function clearFullscreenControlsTimer() {
+  if (!fullscreenControlsHideTimerId) return;
+  window.clearTimeout(fullscreenControlsHideTimerId);
+  fullscreenControlsHideTimerId = null;
+}
+
+function toggleCarouselPaused() {
+  if (!presentationCarouselEnabled.value) return;
+  carouselPaused.value = !carouselPaused.value;
+  carouselLocked.value = carouselPaused.value;
+  if (carouselPaused.value) {
+    stopAutoAnalysisTimers();
+    return;
+  }
+  carouselLocked.value = false;
+  startAutoAnalysisTimers();
+}
+
+function pauseAutoAnalysisForInteraction() {
+  if (!presentationCarouselEnabled.value || carouselLocked.value) return;
+  carouselPaused.value = true;
+  stopAutoAnalysisTimers();
+  scheduleAutoAnalysisResume();
+}
+
+function scheduleAutoAnalysisResume() {
+  if (!presentationCarouselEnabled.value || carouselLocked.value) return;
+  clearAutoResumeTimer();
+  autoResumeTimerId = window.setTimeout(() => {
+    carouselPaused.value = false;
+    startAutoAnalysisTimers();
+  }, AUTO_RESUME_DELAY_MS);
+}
+
+function handleMapBranchSelect(branch) {
+  if (!props.fullscreenActive) {
+    openBranchDetail(branch);
+    return;
+  }
+  focusBranchManually(branch, { pause: true });
+}
+
+function focusBranchManually(branch, options = {}) {
+  if (!branch) return;
+  focusedBranch.value = branch;
+  if (options.pause) {
+    pauseAutoAnalysisForInteraction();
+  }
+}
+
+function focusFirstCarouselPoint() {
+  const firstPoint = carouselSequence.value[0];
+  focusedBranch.value = firstPoint?.branch || '';
+}
+
+function advanceCarouselFocus() {
+  if (!presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
+  const sequence = carouselSequence.value;
+  if (!sequence.length) {
+    focusedBranch.value = '';
+    return;
+  }
+  const currentIndex = sequence.findIndex((point) => point.branch === focusedBranch.value);
+  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % sequence.length;
+  focusedBranch.value = sequence[nextIndex].branch;
+}
+
+function advanceSideAnalysisTab() {
+  const keys = fullscreenSideTabs.map((tab) => tab.key);
+  const currentIndex = keys.indexOf(activeSideTab.value);
+  activeSideTab.value = keys[(currentIndex + 1) % keys.length] || 'branch';
+  sideAnalysisIndex.value = 0;
+}
+
+function advanceSideAnalysisItem() {
+  if (!props.fullscreenActive || !presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
+  const rowCount = activeSideRows.value.length;
+  if (!rowCount) {
+    advanceSideAnalysisTab();
+    return;
+  }
+  if (sideAnalysisIndex.value < rowCount - 1) {
+    sideAnalysisIndex.value += 1;
+    return;
+  }
+  advanceSideAnalysisTab();
+}
+
+function startAutoAnalysisTimers() {
+  stopAutoAnalysisTimers();
+  clearAutoResumeTimer();
+  if (!props.fullscreenActive || !presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
+  mapCarouselTimerId = window.setInterval(advanceCarouselFocus, MAP_CAROUSEL_INTERVAL_MS);
+  sideAnalysisTimerId = window.setInterval(advanceSideAnalysisItem, SIDE_ITEM_INTERVAL_MS);
+}
+
+function stopAutoAnalysisTimers() {
+  if (mapCarouselTimerId) {
+    window.clearInterval(mapCarouselTimerId);
+    mapCarouselTimerId = null;
+  }
+  if (sideAnalysisTimerId) {
+    window.clearInterval(sideAnalysisTimerId);
+    sideAnalysisTimerId = null;
+  }
+}
+
+function clearAutoResumeTimer() {
+  if (!autoResumeTimerId) return;
+  window.clearTimeout(autoResumeTimerId);
+  autoResumeTimerId = null;
+}
+
+function scrollActiveSideRowIntoView() {
+  if (!props.fullscreenActive || !activeSideBranch.value || !pageRef.value) return;
+  const selector = `.qualification-rank-row.focused[data-branch="${cssEscape(activeSideBranch.value)}"], .qualification-risk-row.focused[data-branch="${cssEscape(activeSideBranch.value)}"]`;
+  const row = pageRef.value.querySelector(selector);
+  row?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return String(value).replace(/["\\]/g, '\\$&');
 }
 
 async function handleFileImport(event) {
@@ -637,8 +1106,10 @@ async function handleFileImport(event) {
     updateImportOverlayStep('generate', 'processing', 90, '正在生成分公司地图点位...');
     importedRecords.value = markRaw(payload.records || []);
     importWarnings.value = payload.warnings || [];
-    Object.assign(draftFilters, createDefaultFilters());
-    appliedFilters.value = createDefaultFilters();
+    const allFilters = createAllFiltersFromOptions();
+    Object.assign(draftFilters, allFilters);
+    appliedFilters.value = cloneFilters(allFilters);
+    resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP, {
       records: importedRecords.value,
       warnings: importWarnings.value
@@ -673,16 +1144,43 @@ function applyFilters() {
   selectedBranch.value = '';
   detailKeyword.value = '';
   detailStatus.value = '全部';
+  resetSidePanelExpansion();
+  sideAnalysisIndex.value = 0;
   emit('log', `刷新资质地图，当前结果 ${dashboard.value.filteredRecords.length} 条`);
 }
 
 function resetFilters() {
-  Object.assign(draftFilters, createDefaultFilters());
-  appliedFilters.value = createDefaultFilters();
+  const allFilters = createAllFiltersFromOptions();
+  Object.assign(draftFilters, allFilters);
+  appliedFilters.value = cloneFilters(allFilters);
   selectedBranch.value = '';
   detailKeyword.value = '';
   detailStatus.value = '全部';
+  resetSidePanelExpansion();
+  sideAnalysisIndex.value = 0;
   emit('log', '已重置资质地图筛选条件');
+}
+
+function selectSideTab(tabKey) {
+  if (props.fullscreenActive) {
+    pauseAutoAnalysisForInteraction();
+  }
+  activeSideTab.value = tabKey;
+  sideAnalysisIndex.value = 0;
+  resetSidePanelExpansion();
+}
+
+function toggleSidePanel(panelKey) {
+  if (props.fullscreenActive) {
+    pauseAutoAnalysisForInteraction();
+  }
+  expandedSidePanels[panelKey] = !expandedSidePanels[panelKey];
+}
+
+function resetSidePanelExpansion() {
+  Object.keys(expandedSidePanels).forEach((key) => {
+    expandedSidePanels[key] = false;
+  });
 }
 
 async function runExportFeedback(key, title, message, action) {
@@ -717,6 +1215,10 @@ async function exportCurrentResult() {
 }
 
 function openBranchDetail(branch) {
+  if (props.fullscreenActive) {
+    pauseAutoAnalysisForInteraction();
+    return;
+  }
   selectedBranch.value = branch;
   detailKeyword.value = '';
   detailStatus.value = '全部';
@@ -749,6 +1251,10 @@ function statusClass(status) {
   return 'warning';
 }
 
+function isRiskPoint(point) {
+  return Boolean(point?.expiredQualifications > 0 || point?.expiring30 > 0 || point?.riskLevel === '高风险' || point?.riskLevel === '关注');
+}
+
 function createDefaultFilters() {
   return {
     regions: [],
@@ -760,37 +1266,80 @@ function createDefaultFilters() {
   };
 }
 
-function buildBarOption(seriesData, seriesName) {
+function createAllFiltersFromOptions() {
+  const options = filterOptions.value;
+  return {
+    regions: [...options.regions],
+    branches: [...options.branches],
+    productLines: [...options.productLines],
+    machineModels: [...options.machineModels],
+    qualificationTypes: [...options.qualificationTypes],
+    status: DEFAULT_QUALIFICATION_FILTERS.status
+  };
+}
+
+function cloneFilters(filters) {
+  return {
+    regions: [...filters.regions],
+    branches: [...filters.branches],
+    productLines: [...filters.productLines],
+    machineModels: [...filters.machineModels],
+    qualificationTypes: [...filters.qualificationTypes],
+    status: filters.status
+  };
+}
+
+function buildBarOption(seriesData, seriesName, expanded = false) {
   if (!seriesData?.length) return null;
-  const sorted = [...seriesData].slice(0, 10).reverse();
+  const rows = getDistributionRows(seriesData, expanded, CHART_TOP_LIMIT);
+  const displayRows = [...rows].reverse();
   return {
     backgroundColor: 'transparent',
-    grid: { left: 88, right: 20, top: 16, bottom: 16, containLabel: true },
+    grid: { left: 70, right: 45, top: 10, bottom: 10, containLabel: true },
     xAxis: {
       type: 'value',
-      axisLine: { lineStyle: { color: 'rgba(150, 190, 220, 0.3)' } },
-      splitLine: { lineStyle: { color: 'rgba(120, 170, 210, 0.08)' } },
-      axisLabel: { color: '#8fb5d8' }
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false }
     },
     yAxis: {
       type: 'category',
-      data: sorted.map((item) => item.name),
+      data: displayRows.map((item) => item.name),
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#d4e6f8', width: 120, overflow: 'truncate' }
+      axisLabel: {
+        color: '#d4e6f8',
+        width: 70,
+        overflow: 'truncate',
+        formatter: (value) => truncateLabel(value, 6)
+      }
     },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'shadow' }
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        const current = params?.[0];
+        if (!current) return '';
+        return `${current.name}<br/>${seriesName}：${Number(current.value || 0).toLocaleString('zh-CN')}`;
+      }
     },
     series: [
       {
         name: seriesName,
         type: 'bar',
-        data: sorted.map((item) => item.value),
-        barWidth: 14,
+        data: displayRows.map((item) => ({
+          name: item.name,
+          value: item.value
+        })),
+        barWidth: 12,
+        showBackground: true,
+        backgroundStyle: {
+          color: 'rgba(96, 165, 250, 0.08)',
+          borderRadius: 999
+        },
         itemStyle: {
-          borderRadius: [0, 8, 8, 0],
+          borderRadius: 999,
           color: {
             type: 'linear',
             x: 0,
@@ -806,7 +1355,10 @@ function buildBarOption(seriesData, seriesName) {
         label: {
           show: true,
           position: 'right',
-          color: '#e4f4ff'
+          color: '#e4f4ff',
+          fontWeight: 700,
+          formatter: ({ value }) => formatShortNumber(value),
+          avoidLabelOverlap: true
         }
       }
     ]
@@ -887,13 +1439,10 @@ function buildTrendOption(seriesData) {
   };
 }
 
-function buildTopTypeBarOption(seriesData) {
+function buildTopTypeBarOption(seriesData, expanded = false) {
   if (!seriesData?.length) return null;
 
-  const sorted = [...seriesData].sort((left, right) => right.value - left.value || left.name.localeCompare(right.name, 'zh-CN'));
-  const topItems = sorted.slice(0, 8);
-  const otherValue = sorted.slice(8).reduce((total, item) => total + Number(item.value || 0), 0);
-  const rows = otherValue > 0 ? [...topItems, { name: '其他', value: otherValue }] : topItems;
+  const rows = getDistributionRows(seriesData, expanded, CHART_TOP_LIMIT);
   const displayRows = [...rows].reverse();
 
   return {
@@ -956,16 +1505,40 @@ function buildTopTypeBarOption(seriesData) {
           position: 'right',
           color: '#eef8ff',
           fontWeight: 700,
-          formatter: ({ value }) => value
+          formatter: ({ value }) => formatShortNumber(value),
+          avoidLabelOverlap: true
         }
       }
     ]
   };
 }
 
+function getVisibleRows(rows, expanded, limit) {
+  return expanded ? rows : rows.slice(0, limit);
+}
+
+function getDistributionRows(seriesData, expanded, limit) {
+  const sorted = [...(seriesData || [])].sort((left, right) => Number(right.value || 0) - Number(left.value || 0) || left.name.localeCompare(right.name, 'zh-CN'));
+  if (expanded) return sorted;
+  const topRows = sorted.slice(0, limit);
+  const otherValue = sorted.slice(limit).reduce((total, item) => total + Number(item.value || 0), 0);
+  return otherValue > 0 ? [...topRows, { name: '其他', value: otherValue }] : topRows;
+}
+
+function chartHeightForRows(rowCount, fallbackHeight) {
+  if (!rowCount) return `${fallbackHeight}px`;
+  return `${Math.max(fallbackHeight, rowCount * 32 + 72)}px`;
+}
+
 function truncateLabel(value, maxLength) {
   const text = String(value || '');
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function formatShortNumber(value) {
+  const numericValue = Number(value || 0);
+  if (numericValue < 10000) return String(numericValue);
+  return `${(numericValue / 10000).toFixed(1).replace(/\.0$/, '')}万`;
 }
 
 function createImportOverlayState() {
@@ -1047,6 +1620,7 @@ function closeImportOverlay() {
 }
 
 async function loadLastDataset() {
+  if (restoringView.value) return;
   restoringView.value = true;
   await waitForPaint();
   const record = await loadToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP);
@@ -1057,11 +1631,13 @@ async function loadLastDataset() {
   }
   importedRecords.value = markRaw(payload.records || []);
   importWarnings.value = payload.warnings || [];
-  Object.assign(draftFilters, createDefaultFilters());
-  appliedFilters.value = createDefaultFilters();
+  const allFilters = createAllFiltersFromOptions();
+  Object.assign(draftFilters, allFilters);
+  appliedFilters.value = cloneFilters(allFilters);
   selectedBranch.value = '';
   detailKeyword.value = '';
   detailStatus.value = '全部';
+  resetSidePanelExpansion();
   await nextTick();
   window.setTimeout(() => {
     restoringView.value = false;

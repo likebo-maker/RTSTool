@@ -23,14 +23,19 @@ export function collectQualificationOptions(records) {
 
 export function applyQualificationFilters(records, filters = DEFAULT_QUALIFICATION_FILTERS) {
   return records.filter((record) => {
-    if (filters.regions?.length && !filters.regions.includes(record.mappedRegion)) return false;
-    if (filters.branches?.length && !filters.branches.includes(record.branch)) return false;
-    if (filters.productLines?.length && !filters.productLines.includes(record.productLine)) return false;
-    if (filters.machineModels?.length && !filters.machineModels.includes(record.machineModel)) return false;
-    if (filters.qualificationTypes?.length && !filters.qualificationTypes.includes(record.qualificationType)) return false;
+    if (!matchesMultiSelect(record.mappedRegion, filters.regions)) return false;
+    if (!matchesMultiSelect(record.branch, filters.branches)) return false;
+    if (!matchesMultiSelect(record.productLine, filters.productLines)) return false;
+    if (!matchesMultiSelect(record.machineModel, filters.machineModels)) return false;
+    if (!matchesMultiSelect(record.qualificationType, filters.qualificationTypes)) return false;
     if (filters.status && filters.status !== '全部' && record.qualificationStatus !== filters.status) return false;
     return true;
   });
+}
+
+function matchesMultiSelect(value, selectedValues) {
+  if (!Array.isArray(selectedValues)) return true;
+  return selectedValues.length > 0 && selectedValues.includes(value);
 }
 
 export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICATION_FILTERS) {
@@ -65,25 +70,22 @@ export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICA
       })
       .filter(Boolean),
     topValidBranches: [...branchStats]
-      .sort((left, right) => right.validQualifications - left.validQualifications || right.totalPeople - left.totalPeople)
-      .slice(0, 10),
+      .sort((left, right) => right.validQualifications - left.validQualifications || right.totalPeople - left.totalPeople),
     topRiskBranches: [...branchStats]
       .sort(
         (left, right) =>
           right.expiredQualifications - left.expiredQualifications ||
           right.expiring30 - left.expiring30 ||
           right.expiring60 - left.expiring60
-      )
-      .slice(0, 10),
-    productLineDistribution: aggregateValueSeries(filteredRecords.filter((record) => record.isCurrentlyValid), 'productLine', 10),
+      ),
+    productLineDistribution: aggregateValueSeries(filteredRecords.filter((record) => record.isCurrentlyValid), 'productLine'),
     qualificationTypeDistribution: aggregateValueSeries(filteredRecords.filter((record) => record.isCurrentlyValid), 'qualificationType'),
     expiryTrend: [
       { label: '30天内到期', value: filteredRecords.filter((record) => record.qualificationStatus === '30天内到期').length },
       { label: '60天内到期', value: filteredRecords.filter((record) => record.qualificationStatus === '60天内到期').length },
       { label: '90天内到期', value: filteredRecords.filter((record) => record.qualificationStatus === '90天内到期').length },
       { label: '已过期', value: filteredRecords.filter((record) => record.qualificationStatus === '已过期').length }
-    ],
-    previewRows: filteredRecords.slice(0, 80)
+    ]
   };
 }
 

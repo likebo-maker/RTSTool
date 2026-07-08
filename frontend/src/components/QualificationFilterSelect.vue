@@ -25,9 +25,10 @@
             ref="allCheckboxRef"
             :checked="isAllSelected"
             type="checkbox"
-            @change="selectAll"
+            @change="toggleAll"
           />
           <span>全部</span>
+          <strong>{{ normalizedOptions.length }}</strong>
         </label>
 
         <label
@@ -35,7 +36,7 @@
           :key="option"
           class="qualification-filter-option"
         >
-          <input :checked="modelValue.includes(option)" type="checkbox" @change="toggleOption(option)" />
+          <input :checked="selectedSet.has(option)" type="checkbox" @change="toggleOption(option)" />
           <span>{{ option }}</span>
         </label>
 
@@ -81,19 +82,26 @@ const keyword = ref('');
 const rootRef = ref(null);
 const allCheckboxRef = ref(null);
 
+const normalizedOptions = computed(() => [...new Set(props.options.filter(Boolean))]);
+const selectedValues = computed(() => props.modelValue.filter((value) => normalizedOptions.value.includes(value)));
+const selectedSet = computed(() => new Set(selectedValues.value));
+
 const filteredOptions = computed(() => {
-  if (!props.searchable || !keyword.value) return props.options;
+  if (!props.searchable || !keyword.value) return normalizedOptions.value;
   const lowerKeyword = keyword.value.toLowerCase();
-  return props.options.filter((option) => option.toLowerCase().includes(lowerKeyword));
+  return normalizedOptions.value.filter((option) => option.toLowerCase().includes(lowerKeyword));
 });
 
-const isAllSelected = computed(() => !props.modelValue.length || props.modelValue.length === props.options.length);
-const isPartiallySelected = computed(() => props.modelValue.length > 0 && props.modelValue.length < props.options.length);
+const isAllSelected = computed(() => normalizedOptions.value.length > 0 && selectedValues.value.length === normalizedOptions.value.length);
+const isPartiallySelected = computed(() => selectedValues.value.length > 0 && selectedValues.value.length < normalizedOptions.value.length);
 
 const displayText = computed(() => {
-  if (!props.modelValue.length) return '全部';
-  if (props.modelValue.length === 1) return props.modelValue[0];
-  return `已选 ${props.modelValue.length} 项`;
+  const values = selectedValues.value;
+  if (isAllSelected.value) return '全部';
+  if (!values.length) return '未选择';
+  if (values.length === 1) return values[0];
+  if (values.length === 2) return values.join('、');
+  return `${values[0]}、${values[1]} +${values.length - 2}`;
 });
 
 onMounted(() => {
@@ -105,8 +113,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside);
 });
 
-watch([() => props.modelValue, () => props.options], async () => {
+watch([() => props.modelValue, normalizedOptions], async () => {
   await nextTick();
+  pruneInvalidValues();
   syncAllCheckboxState();
 }, { deep: true });
 
@@ -118,19 +127,15 @@ function close() {
   isOpen.value = false;
 }
 
-function clearSelection() {
-  emit('update:modelValue', []);
-}
-
-function selectAll() {
-  clearSelection();
+function toggleAll(event) {
+  emit('update:modelValue', event.target.checked ? [...normalizedOptions.value] : []);
 }
 
 function toggleOption(option) {
-  const current = new Set(props.modelValue);
+  const current = new Set(selectedValues.value);
   if (current.has(option)) current.delete(option);
   else current.add(option);
-  emit('update:modelValue', [...current]);
+  emit('update:modelValue', normalizedOptions.value.filter((item) => current.has(item)));
 }
 
 function handleClickOutside(event) {
@@ -142,5 +147,10 @@ function handleClickOutside(event) {
 function syncAllCheckboxState() {
   if (!allCheckboxRef.value) return;
   allCheckboxRef.value.indeterminate = isPartiallySelected.value;
+}
+
+function pruneInvalidValues() {
+  if (selectedValues.value.length === props.modelValue.length) return;
+  emit('update:modelValue', selectedValues.value);
 }
 </script>

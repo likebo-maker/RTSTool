@@ -1,6 +1,11 @@
 <template>
-  <div class="tool-page qualification-page training-page">
-    <section class="tool-header qualification-tool-header">
+  <div
+    ref="pageRef"
+    class="tool-page qualification-page training-page"
+    :class="{ 'fullscreen-workspace': fullscreenActive, 'fullscreen-filter-open': fullscreenFiltersOpen, 'presentation-mode': presentationCarouselEnabled }"
+    @mousemove="handleFullscreenMouseMove"
+  >
+    <section v-if="!fullscreenActive" class="tool-header qualification-tool-header">
       <div class="qualification-tool-heading">
         <div class="tool-icon">
           <Presentation :size="24" />
@@ -40,10 +45,73 @@
           <RotateCcw :size="18" />
           <span>重置筛选</span>
         </button>
+        <button class="ghost-button fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen">
+          <Minimize2 v-if="fullscreenActive" :size="18" />
+          <Maximize2 v-else :size="18" />
+          <span>{{ fullscreenActive ? '退出全屏' : '浏览器全屏' }}</span>
+        </button>
       </div>
     </section>
 
-    <section class="glass-panel qualification-filter-panel">
+    <section v-else class="fullscreen-training-toolbar">
+      <div class="fullscreen-training-title">
+        <strong>中国区培训覆盖地图</strong>
+        <span>Training Coverage Map</span>
+      </div>
+      <div
+        class="fullscreen-training-actions"
+        :class="{ visible: fullscreenControlsVisible }"
+        @mouseenter="handleFullscreenControlsMouseEnter"
+        @mouseleave="handleFullscreenControlsMouseLeave"
+        @mousemove.stop
+        @click.capture="handleFullscreenControlsClick"
+      >
+        <input
+          ref="fileInputRef"
+          class="hidden-file-input"
+          type="file"
+          accept=".xlsx,.xls"
+          multiple
+          @change="handleFileImport"
+        />
+        <button class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
+          <Upload :size="16" />
+          <span>导入培训表</span>
+        </button>
+        <button
+          class="ghost-button compact"
+          :class="{ locked: !canExportExcel }"
+          type="button"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecords.length)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+          @click="exportCurrentResult"
+        >
+          <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="16" />
+          <Download v-else :size="16" />
+          <span>导出当前结果</span>
+        </button>
+        <button class="ghost-button compact" :class="{ active: fullscreenFiltersOpen }" type="button" @click="fullscreenFiltersOpen = !fullscreenFiltersOpen">
+          <Search :size="16" />
+          <span>筛选器</span>
+        </button>
+        <button
+          class="ghost-button compact"
+          :class="{ active: presentationCarouselEnabled && !carouselPaused }"
+          type="button"
+          @click="toggleCarouselPaused"
+        >
+          <Play v-if="carouselPaused" :size="16" />
+          <Pause v-else :size="16" />
+          <span>自动轮播（{{ carouselPaused ? '暂停' : '开启' }}）</span>
+        </button>
+        <button class="ghost-button compact fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen">
+          <Minimize2 :size="16" />
+          <span>退出全屏</span>
+        </button>
+      </div>
+    </section>
+
+    <section v-if="!fullscreenActive || fullscreenFiltersOpen" class="glass-panel qualification-filter-panel">
       <div class="panel-title-row">
         <div>
           <p class="section-kicker">Filter Controls</p>
@@ -88,7 +156,7 @@
       </div>
     </section>
 
-    <section class="qualification-metric-grid">
+    <section v-if="!fullscreenActive" class="qualification-metric-grid">
       <article v-for="metric in metricCards" :key="metric.key" class="metric-card" :class="metric.tone">
         <component :is="metric.icon" :size="20" />
         <span class="qualification-metric-label">{{ metric.label }}</span>
@@ -97,15 +165,27 @@
     </section>
 
     <section class="qualification-main-grid">
-      <TrainingCoverageAmap
-        v-model:displayMode="displayMode"
-        :points="dashboard.mapPoints"
-        :loading="loading"
-        :selected-branch="selectedBranch"
-        :selected-regions="appliedFilters.regions"
-        :empty-text="emptyStateText"
-        @select-center="openTrainingCenterDetail"
-      />
+      <div class="training-map-stage" @click="pauseAutoAnalysisForInteraction">
+        <section v-if="fullscreenActive" class="fullscreen-kpi-overlay">
+          <article v-for="metric in metricCards" :key="`fullscreen-${metric.key}`" class="fullscreen-kpi-card" :class="metric.tone">
+            <span>{{ metric.label }}</span>
+            <strong>{{ metric.value }}</strong>
+          </article>
+        </section>
+        <TrainingCoverageAmap
+          v-model:displayMode="displayMode"
+          :points="dashboard.mapPoints"
+          :loading="loading"
+          :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen"
+          :selected-branch="fullscreenActive ? focusedCenter : selectedBranch"
+          :presentation-mode="fullscreenActive && presentationCarouselEnabled"
+          :focused-branch="focusedCenter"
+          :label-branches="permanentLabelBranches"
+          :selected-regions="appliedFilters.regions"
+          :empty-text="emptyStateText"
+          @select-center="handleTrainingCenterSelect"
+        />
+      </div>
 
       <aside class="qualification-side-panel">
         <section class="glass-panel qualification-side-tabs">
@@ -121,7 +201,7 @@
                 class="qualification-tab-button"
                 :class="{ active: activeSideTab === tab.key }"
                 type="button"
-                @click="activeSideTab = tab.key"
+                @click="selectSideTab(tab.key)"
               >
                 {{ tab.label }}
               </button>
@@ -134,19 +214,28 @@
                 <span>分公司TOP10</span>
                 <strong>{{ dashboard.topBranches.length }}</strong>
               </div>
-              <div v-if="dashboard.topBranches.length" class="qualification-rank-list scrollable">
-                <button
-                  v-for="(item, index) in dashboard.topBranches"
-                  :key="item.branch"
-                  class="qualification-rank-row"
-                  type="button"
-                  @click="openBranchDetail(item.branch)"
-                >
-                  <span class="rank-index">{{ index + 1 }}</span>
-                  <div class="rank-branch-copy">
-                    <strong>{{ item.branch }}</strong>
-                    <span>培训人次 {{ item.traineeCount }} / 记录数 {{ item.recordCount }}</span>
-                  </div>
+              <div v-if="dashboard.topBranches.length" class="qualification-expandable-block">
+                <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.branch || fullscreenActive }">
+                  <button
+                    v-for="(item, index) in displayedTopBranches"
+                    :key="item.branch"
+                    class="qualification-rank-row"
+                    :class="{ focused: activeSideTab === 'branch' && index === sideAnalysisIndex }"
+                    :data-branch="item.branch"
+                    type="button"
+                    @click="openBranchDetail(item.branch)"
+                  >
+                    <span class="rank-index">{{ index + 1 }}</span>
+                    <div class="rank-branch-copy">
+                      <strong>{{ item.branch }}</strong>
+                      <span>培训人次 {{ item.traineeCount }} / 记录数 {{ item.recordCount }}</span>
+                    </div>
+                  </button>
+                </div>
+                <button v-if="!fullscreenActive && dashboard.topBranches.length > TOP_LIST_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('branch')">
+                  <ChevronUp v-if="expandedSidePanels.branch" :size="16" />
+                  <ChevronDown v-else :size="16" />
+                  <span>{{ expandedSidePanels.branch ? '收起，仅显示TOP10' : `展开全部 ${dashboard.topBranches.length}项` }}</span>
                 </button>
               </div>
               <div v-else class="chart-empty-state compact in-tab">
@@ -160,19 +249,28 @@
                 <span>风险TOP10</span>
                 <strong>{{ dashboard.riskBranches.length }}</strong>
               </div>
-              <div v-if="dashboard.riskBranches.length" class="qualification-rank-list scrollable">
-                <button
-                  v-for="(item, index) in dashboard.riskBranches"
-                  :key="`${item.branch}-risk`"
-                  class="qualification-risk-row"
-                  type="button"
-                  @click="openBranchDetail(item.branch)"
-                >
-                  <span class="rank-index">{{ index + 1 }}</span>
-                  <div class="rank-branch-copy">
-                    <strong>{{ item.branch }}</strong>
-                    <span>不合格 {{ item.failCount }} / 合格率 {{ item.passRate }}</span>
-                  </div>
+              <div v-if="dashboard.riskBranches.length" class="qualification-expandable-block">
+                <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.risk || fullscreenActive }">
+                  <button
+                    v-for="(item, index) in displayedRiskBranches"
+                    :key="`${item.branch}-risk`"
+                    class="qualification-risk-row"
+                    :class="{ focused: activeSideTab === 'risk' && index === sideAnalysisIndex }"
+                    :data-branch="item.branch"
+                    type="button"
+                    @click="openBranchDetail(item.branch)"
+                  >
+                    <span class="rank-index">{{ index + 1 }}</span>
+                    <div class="rank-branch-copy">
+                      <strong>{{ item.branch }}</strong>
+                      <span>不合格 {{ item.failCount }} / 合格率 {{ item.passRate }}</span>
+                    </div>
+                  </button>
+                </div>
+                <button v-if="!fullscreenActive && dashboard.riskBranches.length > TOP_LIST_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('risk')">
+                  <ChevronUp v-if="expandedSidePanels.risk" :size="16" />
+                  <ChevronDown v-else :size="16" />
+                  <span>{{ expandedSidePanels.risk ? '收起，仅显示TOP10' : `展开全部 ${dashboard.riskBranches.length}项` }}</span>
                 </button>
               </div>
               <div v-else class="chart-empty-state compact in-tab">
@@ -182,34 +280,50 @@
             </div>
 
             <div v-else-if="activeSideTab === 'product'" class="qualification-tab-panel">
-              <EChartPanel
-                title="产线分布"
-                kicker="Product Line"
-                :option="productLineBarOption"
-                :loading="loading"
-                height="540px"
-                :empty-text="'暂无产线分布数据'"
-                panelless
-              />
+              <div class="qualification-expandable-chart" :class="{ expanded: expandedSidePanels.product }">
+                <EChartPanel
+                  title="产线分布"
+                  kicker="Product Line"
+                  :option="productLineBarOption"
+                  :loading="loading"
+                  :height="productLineChartHeight"
+                  :highlight-index="activeSideTab === 'product' ? sideChartHighlightIndex : -1"
+                  :empty-text="'暂无产线分布数据'"
+                  panelless
+                />
+              </div>
+              <button v-if="!fullscreenActive && dashboard.productLineDistribution.length > CHART_TOP_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('product')">
+                <ChevronUp v-if="expandedSidePanels.product" :size="16" />
+                <ChevronDown v-else :size="16" />
+                <span>{{ expandedSidePanels.product ? '收起，仅显示TOP10' : `展开全部 ${dashboard.productLineDistribution.length}项` }}</span>
+              </button>
             </div>
 
             <div v-else class="qualification-tab-panel">
-              <EChartPanel
-                title="培训类型"
-                kicker="Training Type"
-                :option="trainingTypeBarOption"
-                :loading="loading"
-                height="540px"
-                :empty-text="'暂无培训类型分布数据'"
-                panelless
-              />
+              <div class="qualification-expandable-chart" :class="{ expanded: expandedSidePanels.type }">
+                <EChartPanel
+                  title="培训类型"
+                  kicker="Training Type"
+                  :option="trainingTypeBarOption"
+                  :loading="loading"
+                  :height="trainingTypeChartHeight"
+                  :highlight-index="activeSideTab === 'type' ? sideChartHighlightIndex : -1"
+                  :empty-text="'暂无培训类型分布数据'"
+                  panelless
+                />
+              </div>
+              <button v-if="!fullscreenActive && dashboard.trainingTypeDistribution.length > CHART_TOP_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('type')">
+                <ChevronUp v-if="expandedSidePanels.type" :size="16" />
+                <ChevronDown v-else :size="16" />
+                <span>{{ expandedSidePanels.type ? '收起，仅显示TOP10' : `展开全部 ${dashboard.trainingTypeDistribution.length}项` }}</span>
+              </button>
             </div>
           </div>
         </section>
       </aside>
     </section>
 
-    <section class="glass-panel qualification-table-panel" :class="{ collapsed: !trendExpanded }">
+    <section v-if="!fullscreenActive" class="glass-panel qualification-table-panel" :class="{ collapsed: !trendExpanded }">
       <div class="panel-title-row">
         <div>
           <p class="section-kicker">Training Trend</p>
@@ -237,7 +351,7 @@
       />
     </section>
 
-    <section class="glass-panel qualification-table-panel" :class="{ collapsed: !detailTableExpanded }">
+    <section v-if="!fullscreenActive" class="glass-panel qualification-table-panel" :class="{ collapsed: !detailTableExpanded }">
       <div class="panel-title-row">
         <div>
           <p class="section-kicker">Training Detail</p>
@@ -428,17 +542,23 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watchEffect } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
 import {
   AlertTriangle,
   Award,
   BookOpenCheck,
+  ChevronDown,
+  ChevronUp,
   CircleX,
   Download,
   Eraser,
   ListOrdered,
   LoaderCircle,
+  Maximize2,
   MapPinned,
+  Minimize2,
+  Pause,
+  Play,
   Presentation,
   RotateCcw,
   Search,
@@ -464,16 +584,34 @@ const props = defineProps({
   canExportExcel: {
     type: Boolean,
     default: true
+  },
+  fullscreenActive: {
+    type: Boolean,
+    default: false
   }
 });
 
-const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
+const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen']);
 
+const TOP_LIST_LIMIT = 10;
+const CHART_TOP_LIMIT = 10;
+const MAP_CAROUSEL_INTERVAL_MS = 5000;
+const SIDE_ITEM_INTERVAL_MS = 4000;
+const AUTO_RESUME_DELAY_MS = 30000;
+const pageRef = ref(null);
 const fileInputRef = ref(null);
 const loading = ref(false);
 const importedRecords = ref([]);
 const importWarnings = ref([]);
 const displayMode = ref('training-count');
+const fullscreenFiltersOpen = ref(false);
+const fullscreenControlsVisible = ref(false);
+const fullscreenControlsHovering = ref(false);
+const presentationCarouselEnabled = ref(false);
+const carouselPaused = ref(false);
+const carouselLocked = ref(false);
+const focusedCenter = ref('');
+const sideAnalysisIndex = ref(0);
 const selectedBranch = ref('');
 const selectedDetailScope = ref('branch');
 const activeSideTab = ref('branch');
@@ -481,6 +619,12 @@ const detailKeyword = ref('');
 const detailStatus = ref('全部');
 const detailTableExpanded = ref(false);
 const trendExpanded = ref(false);
+const expandedSidePanels = reactive({
+  branch: false,
+  risk: false,
+  product: false,
+  type: false
+});
 const importOverlay = reactive(createImportOverlayState());
 const activeExportKey = ref('');
 const exportFeedback = reactive({
@@ -488,6 +632,14 @@ const exportFeedback = reactive({
   title: '',
   message: ''
 });
+let mapCarouselTimerId = null;
+let sideAnalysisTimerId = null;
+let autoResumeTimerId = null;
+let fullscreenControlsHideTimerId = null;
+
+function toggleBrowserFullscreen() {
+  emit(props.fullscreenActive ? 'exit-fullscreen' : 'enter-fullscreen');
+}
 
 const draftFilters = reactive(createDefaultFilters());
 const appliedFilters = ref(createDefaultFilters());
@@ -555,14 +707,65 @@ const branchMetricCards = computed(() => {
   ];
 });
 
-const productLineBarOption = computed(() => buildTopBarOption(dashboard.value.productLineDistribution, '培训记录数'));
-const trainingTypeBarOption = computed(() => buildTopBarOption(dashboard.value.trainingTypeDistribution, '培训记录数'));
+const productLineBarOption = computed(() => buildTopBarOption(dashboard.value.productLineDistribution, '培训记录数', expandedSidePanels.product));
+const trainingTypeBarOption = computed(() => buildTopBarOption(dashboard.value.trainingTypeDistribution, '培训记录数', expandedSidePanels.type));
 const trendOption = computed(() => buildTrainingTrendOption(dashboard.value.trendSeries));
 const branchProductLineOption = computed(() => buildTopBarOption(branchDetail.value.productLineDistribution || [], '培训记录数'));
 const branchTypeOption = computed(() => buildTopBarOption(branchDetail.value.trainingTypeDistribution || [], '培训记录数'));
 const branchTrendOption = computed(() => buildTrainingTrendOption(branchDetail.value.trendSeries || []));
+const displayedTopBranches = computed(() => (props.fullscreenActive
+  ? dashboard.value.topBranches
+  : getVisibleRows(dashboard.value.topBranches, expandedSidePanels.branch, TOP_LIST_LIMIT)));
+const displayedRiskBranches = computed(() => (props.fullscreenActive
+  ? dashboard.value.riskBranches
+  : getVisibleRows(dashboard.value.riskBranches, expandedSidePanels.risk, TOP_LIST_LIMIT)));
+const productLineChartRows = computed(() => getDistributionRows(dashboard.value.productLineDistribution, expandedSidePanels.product, CHART_TOP_LIMIT));
+const trainingTypeChartRows = computed(() => getDistributionRows(dashboard.value.trainingTypeDistribution, expandedSidePanels.type, CHART_TOP_LIMIT));
+const productLineChartHeight = computed(() => chartHeightForRows(productLineChartRows.value.length, 540));
+const trainingTypeChartHeight = computed(() => chartHeightForRows(trainingTypeChartRows.value.length, 540));
+const permanentLabelBranches = computed(() => {
+  if (!props.fullscreenActive || !presentationCarouselEnabled.value) return [];
+  return focusedCenter.value ? [focusedCenter.value] : [];
+});
+const activeSideRows = computed(() => {
+  if (activeSideTab.value === 'branch') return displayedTopBranches.value;
+  if (activeSideTab.value === 'risk') return displayedRiskBranches.value;
+  if (activeSideTab.value === 'product') return productLineChartRows.value;
+  if (activeSideTab.value === 'type') return trainingTypeChartRows.value;
+  return [];
+});
+const activeSideBranch = computed(() => {
+  if (!['branch', 'risk'].includes(activeSideTab.value)) return '';
+  return activeSideRows.value[sideAnalysisIndex.value]?.branch || '';
+});
+const sideChartHighlightIndex = computed(() => {
+  if (!['product', 'type'].includes(activeSideTab.value)) return -1;
+  const rowCount = activeSideRows.value.length;
+  if (!rowCount || sideAnalysisIndex.value < 0 || sideAnalysisIndex.value >= rowCount) return -1;
+  return rowCount - 1 - sideAnalysisIndex.value;
+});
+const carouselSequence = computed(() => {
+  const mapPointByCenter = new Map(dashboard.value.mapPoints.map((point) => [resolveTrainingPointKey(point), point]));
+  const addUniquePoints = (target, items) => {
+    items.forEach((item) => {
+      const point = mapPointByCenter.get(resolveTrainingPointKey(item));
+      if (point && !target.some((candidate) => resolveTrainingPointKey(candidate) === resolveTrainingPointKey(point))) {
+        target.push(point);
+      }
+    });
+  };
+
+  const result = [];
+  addUniquePoints(result, [...dashboard.value.mapPoints].sort(compareTrainingCountPoint).slice(0, 10));
+  addUniquePoints(result, [...dashboard.value.mapPoints].filter(isTrainingRiskPoint).sort(compareTrainingRiskPoint).slice(0, 10));
+  addUniquePoints(result, dashboard.value.mapPoints);
+  return result;
+});
 
 watchEffect(() => {
+  if (!props.fullscreenActive && fullscreenFiltersOpen.value) {
+    fullscreenFiltersOpen.value = false;
+  }
   if (loading.value) {
     emit('status-change', '培训覆盖地图数据处理中');
     return;
@@ -572,9 +775,252 @@ watchEffect(() => {
 
 onMounted(loadLastDataset);
 
+onBeforeUnmount(() => {
+  stopAutoAnalysisTimers();
+  clearAutoResumeTimer();
+  clearFullscreenControlsTimer();
+});
+
+watch(
+  () => props.fullscreenActive,
+  (isFullscreen) => {
+    if (isFullscreen) {
+      fullscreenControlsVisible.value = false;
+      fullscreenControlsHovering.value = false;
+      clearFullscreenControlsTimer();
+      presentationCarouselEnabled.value = true;
+      carouselPaused.value = false;
+      carouselLocked.value = false;
+      activeSideTab.value = 'branch';
+      sideAnalysisIndex.value = 0;
+      focusFirstCarouselPoint();
+      startAutoAnalysisTimers();
+      return;
+    }
+    presentationCarouselEnabled.value = false;
+    fullscreenControlsVisible.value = false;
+    fullscreenControlsHovering.value = false;
+    carouselPaused.value = false;
+    carouselLocked.value = false;
+    focusedCenter.value = '';
+    sideAnalysisIndex.value = 0;
+    stopAutoAnalysisTimers();
+    clearAutoResumeTimer();
+    clearFullscreenControlsTimer();
+  }
+);
+
+watch(
+  () => carouselSequence.value.map((point) => resolveTrainingPointKey(point)).join('|'),
+  () => {
+    if (!props.fullscreenActive || !presentationCarouselEnabled.value) return;
+    if (!carouselSequence.value.some((point) => resolveTrainingPointKey(point) === focusedCenter.value)) {
+      focusFirstCarouselPoint();
+    }
+    startAutoAnalysisTimers();
+  }
+);
+
+watch(
+  () => activeSideTab.value,
+  async () => {
+    sideAnalysisIndex.value = 0;
+    await nextTick();
+    scrollActiveSideRowIntoView();
+  }
+);
+
+watch(
+  () => sideAnalysisIndex.value,
+  async () => {
+    await nextTick();
+    scrollActiveSideRowIntoView();
+  }
+);
+
+watch(
+  () => activeSideRows.value.length,
+  (rowCount) => {
+    if (!rowCount) {
+      sideAnalysisIndex.value = 0;
+      return;
+    }
+    if (sideAnalysisIndex.value >= rowCount) {
+      sideAnalysisIndex.value = rowCount - 1;
+    }
+  }
+);
+
 function openImporter() {
   if (interactionDisabled.value) return;
   fileInputRef.value?.click();
+}
+
+function handleFullscreenMouseMove(event) {
+  if (!props.fullscreenActive) return;
+  if (event.clientY < 100) {
+    revealFullscreenControls();
+  }
+}
+
+function revealFullscreenControls() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsVisible.value = true;
+  scheduleFullscreenControlsHide();
+}
+
+function handleFullscreenControlsMouseEnter() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsHovering.value = true;
+  fullscreenControlsVisible.value = true;
+  clearFullscreenControlsTimer();
+}
+
+function handleFullscreenControlsMouseLeave() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsHovering.value = false;
+  scheduleFullscreenControlsHide();
+}
+
+function handleFullscreenControlsClick() {
+  if (!props.fullscreenActive) return;
+  fullscreenControlsVisible.value = true;
+  scheduleFullscreenControlsHide();
+}
+
+function scheduleFullscreenControlsHide() {
+  clearFullscreenControlsTimer();
+  if (fullscreenControlsHovering.value) return;
+  fullscreenControlsHideTimerId = window.setTimeout(() => {
+    if (!fullscreenControlsHovering.value) {
+      fullscreenControlsVisible.value = false;
+    }
+  }, 3000);
+}
+
+function clearFullscreenControlsTimer() {
+  if (!fullscreenControlsHideTimerId) return;
+  window.clearTimeout(fullscreenControlsHideTimerId);
+  fullscreenControlsHideTimerId = null;
+}
+
+function toggleCarouselPaused() {
+  if (!presentationCarouselEnabled.value) return;
+  carouselPaused.value = !carouselPaused.value;
+  carouselLocked.value = carouselPaused.value;
+  if (carouselPaused.value) {
+    stopAutoAnalysisTimers();
+    return;
+  }
+  carouselLocked.value = false;
+  startAutoAnalysisTimers();
+}
+
+function pauseAutoAnalysisForInteraction() {
+  if (!presentationCarouselEnabled.value || carouselLocked.value) return;
+  carouselPaused.value = true;
+  stopAutoAnalysisTimers();
+  scheduleAutoAnalysisResume();
+}
+
+function scheduleAutoAnalysisResume() {
+  if (!presentationCarouselEnabled.value || carouselLocked.value) return;
+  clearAutoResumeTimer();
+  autoResumeTimerId = window.setTimeout(() => {
+    carouselPaused.value = false;
+    startAutoAnalysisTimers();
+  }, AUTO_RESUME_DELAY_MS);
+}
+
+function handleTrainingCenterSelect(trainingCenter) {
+  if (!props.fullscreenActive) {
+    openTrainingCenterDetail(trainingCenter);
+    return;
+  }
+  focusCenterManually(trainingCenter, { pause: true });
+}
+
+function focusCenterManually(trainingCenter, options = {}) {
+  if (!trainingCenter) return;
+  focusedCenter.value = trainingCenter;
+  if (options.pause) {
+    pauseAutoAnalysisForInteraction();
+  }
+}
+
+function focusFirstCarouselPoint() {
+  const firstPoint = carouselSequence.value[0];
+  focusedCenter.value = firstPoint ? resolveTrainingPointKey(firstPoint) : '';
+}
+
+function advanceCarouselFocus() {
+  if (!presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
+  const sequence = carouselSequence.value;
+  if (!sequence.length) {
+    focusedCenter.value = '';
+    return;
+  }
+  const currentIndex = sequence.findIndex((point) => resolveTrainingPointKey(point) === focusedCenter.value);
+  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % sequence.length;
+  focusedCenter.value = resolveTrainingPointKey(sequence[nextIndex]);
+}
+
+function advanceSideAnalysisTab() {
+  const keys = sideTabs.map((tab) => tab.key);
+  const currentIndex = keys.indexOf(activeSideTab.value);
+  activeSideTab.value = keys[(currentIndex + 1) % keys.length] || 'branch';
+  sideAnalysisIndex.value = 0;
+}
+
+function advanceSideAnalysisItem() {
+  if (!props.fullscreenActive || !presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
+  const rowCount = activeSideRows.value.length;
+  if (!rowCount) {
+    advanceSideAnalysisTab();
+    return;
+  }
+  if (sideAnalysisIndex.value < rowCount - 1) {
+    sideAnalysisIndex.value += 1;
+    return;
+  }
+  advanceSideAnalysisTab();
+}
+
+function startAutoAnalysisTimers() {
+  stopAutoAnalysisTimers();
+  clearAutoResumeTimer();
+  if (!props.fullscreenActive || !presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
+  mapCarouselTimerId = window.setInterval(advanceCarouselFocus, MAP_CAROUSEL_INTERVAL_MS);
+  sideAnalysisTimerId = window.setInterval(advanceSideAnalysisItem, SIDE_ITEM_INTERVAL_MS);
+}
+
+function stopAutoAnalysisTimers() {
+  if (mapCarouselTimerId) {
+    window.clearInterval(mapCarouselTimerId);
+    mapCarouselTimerId = null;
+  }
+  if (sideAnalysisTimerId) {
+    window.clearInterval(sideAnalysisTimerId);
+    sideAnalysisTimerId = null;
+  }
+}
+
+function clearAutoResumeTimer() {
+  if (!autoResumeTimerId) return;
+  window.clearTimeout(autoResumeTimerId);
+  autoResumeTimerId = null;
+}
+
+function scrollActiveSideRowIntoView() {
+  if (!props.fullscreenActive || !activeSideBranch.value || !pageRef.value) return;
+  const selector = `.qualification-rank-row.focused[data-branch="${cssEscape(activeSideBranch.value)}"], .qualification-risk-row.focused[data-branch="${cssEscape(activeSideBranch.value)}"]`;
+  const row = pageRef.value.querySelector(selector);
+  row?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return String(value).replace(/["\\]/g, '\\$&');
 }
 
 async function handleFileImport(event) {
@@ -593,8 +1039,10 @@ async function handleFileImport(event) {
     updateImportOverlayStep('generate', 'processing', 90, '正在生成地图与分析数据...');
     importedRecords.value = payload.records;
     importWarnings.value = payload.warnings || [];
-    Object.assign(draftFilters, createDefaultFilters());
-    appliedFilters.value = createDefaultFilters();
+    const allFilters = createAllFiltersFromOptions();
+    Object.assign(draftFilters, allFilters);
+    appliedFilters.value = cloneFilters(allFilters);
+    resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.TRAINING_COVERAGE_MAP, {
       records: importedRecords.value,
       warnings: importWarnings.value
@@ -631,17 +1079,44 @@ function applyFilters() {
   selectedDetailScope.value = 'branch';
   detailKeyword.value = '';
   detailStatus.value = '全部';
+  resetSidePanelExpansion();
+  sideAnalysisIndex.value = 0;
   emit('log', `刷新培训覆盖地图，当前结果 ${dashboard.value.filteredRecords.length} 条`);
 }
 
 function resetFilters() {
-  Object.assign(draftFilters, createDefaultFilters());
-  appliedFilters.value = createDefaultFilters();
+  const allFilters = createAllFiltersFromOptions();
+  Object.assign(draftFilters, allFilters);
+  appliedFilters.value = cloneFilters(allFilters);
   selectedBranch.value = '';
   selectedDetailScope.value = 'branch';
   detailKeyword.value = '';
   detailStatus.value = '全部';
+  resetSidePanelExpansion();
+  sideAnalysisIndex.value = 0;
   emit('log', '已重置培训覆盖地图筛选条件');
+}
+
+function selectSideTab(tabKey) {
+  if (props.fullscreenActive) {
+    pauseAutoAnalysisForInteraction();
+  }
+  activeSideTab.value = tabKey;
+  sideAnalysisIndex.value = 0;
+  resetSidePanelExpansion();
+}
+
+function toggleSidePanel(panelKey) {
+  if (props.fullscreenActive) {
+    pauseAutoAnalysisForInteraction();
+  }
+  expandedSidePanels[panelKey] = !expandedSidePanels[panelKey];
+}
+
+function resetSidePanelExpansion() {
+  Object.keys(expandedSidePanels).forEach((key) => {
+    expandedSidePanels[key] = false;
+  });
 }
 
 async function runExportFeedback(key, title, message, action) {
@@ -676,6 +1151,10 @@ async function exportCurrentResult() {
 }
 
 function openBranchDetail(branch) {
+  if (props.fullscreenActive) {
+    pauseAutoAnalysisForInteraction();
+    return;
+  }
   selectedBranch.value = branch;
   selectedDetailScope.value = 'branch';
   detailKeyword.value = '';
@@ -717,6 +1196,29 @@ function statusClass(status) {
   return 'warning';
 }
 
+function resolveTrainingPointKey(point) {
+  return point?.trainingCenter || point?.branch || '';
+}
+
+function isTrainingRiskPoint(point) {
+  if (!point) return false;
+  if (Number(point.failCount || 0) > 0) return true;
+  if (point.hasEffectiveResult && Number(point.passRateValue ?? 100) < 70) return true;
+  return false;
+}
+
+function compareTrainingCountPoint(left, right) {
+  return Number(right.traineeCount || 0) - Number(left.traineeCount || 0)
+    || Number(right.recordCount || 0) - Number(left.recordCount || 0)
+    || resolveTrainingPointKey(left).localeCompare(resolveTrainingPointKey(right), 'zh-CN');
+}
+
+function compareTrainingRiskPoint(left, right) {
+  return Number(right.failCount || 0) - Number(left.failCount || 0)
+    || Number(left.passRateValue ?? 100) - Number(right.passRateValue ?? 100)
+    || resolveTrainingPointKey(left).localeCompare(resolveTrainingPointKey(right), 'zh-CN');
+}
+
 function createDefaultFilters() {
   return {
     branches: [],
@@ -729,12 +1231,34 @@ function createDefaultFilters() {
   };
 }
 
-function buildTopBarOption(seriesData, seriesName) {
+function createAllFiltersFromOptions() {
+  const options = filterOptions.value;
+  return {
+    branches: [...options.branches],
+    regions: [...options.regions],
+    productLines: [...options.productLines],
+    cycles: [...options.cycles],
+    result: DEFAULT_TRAINING_FILTERS.result,
+    trainingCenters: [...options.trainingCenters],
+    trainingTypes: [...options.trainingTypes]
+  };
+}
+
+function cloneFilters(filters) {
+  return {
+    branches: [...filters.branches],
+    regions: [...filters.regions],
+    productLines: [...filters.productLines],
+    cycles: [...filters.cycles],
+    result: filters.result,
+    trainingCenters: [...filters.trainingCenters],
+    trainingTypes: [...filters.trainingTypes]
+  };
+}
+
+function buildTopBarOption(seriesData, seriesName, expanded = false) {
   if (!seriesData?.length) return null;
-  const sorted = [...seriesData];
-  const otherValue = sorted.slice(8).reduce((total, item) => total + Number(item.value || 0), 0);
-  const topRows = sorted.slice(0, 8);
-  const rows = otherValue > 0 ? [...topRows, { name: '其他', value: otherValue }] : topRows;
+  const rows = getDistributionRows(seriesData, expanded, CHART_TOP_LIMIT);
   const displayRows = [...rows].reverse();
   return {
     backgroundColor: 'transparent',
@@ -745,7 +1269,7 @@ function buildTopBarOption(seriesData, seriesName) {
       formatter: (params) => {
         const current = params?.[0];
         if (!current) return '';
-        return `${current.name}<br/>${seriesName}：${current.value}`;
+        return `${current.name}<br/>${seriesName}：${Number(current.value || 0).toLocaleString('zh-CN')}`;
       }
     },
     xAxis: {
@@ -793,11 +1317,29 @@ function buildTopBarOption(seriesData, seriesName) {
           position: 'right',
           color: '#eef8ff',
           fontWeight: 700,
-          formatter: ({ value }) => value
+          formatter: ({ value }) => formatShortNumber(value),
+          avoidLabelOverlap: true
         }
       }
     ]
   };
+}
+
+function getVisibleRows(rows, expanded, limit) {
+  return expanded ? rows : rows.slice(0, limit);
+}
+
+function getDistributionRows(seriesData, expanded, limit) {
+  const sorted = [...(seriesData || [])].sort((left, right) => Number(right.value || 0) - Number(left.value || 0) || left.name.localeCompare(right.name, 'zh-CN'));
+  if (expanded) return sorted;
+  const topRows = sorted.slice(0, limit);
+  const otherValue = sorted.slice(limit).reduce((total, item) => total + Number(item.value || 0), 0);
+  return otherValue > 0 ? [...topRows, { name: '其他', value: otherValue }] : topRows;
+}
+
+function chartHeightForRows(rowCount, fallbackHeight) {
+  if (!rowCount) return `${fallbackHeight}px`;
+  return `${Math.max(fallbackHeight, rowCount * 32 + 72)}px`;
 }
 
 function buildTrainingTrendOption(seriesData) {
@@ -866,6 +1408,12 @@ function buildTrainingTrendOption(seriesData) {
 function truncateLabel(value, maxLength) {
   const text = String(value || '');
   return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function formatShortNumber(value) {
+  const numericValue = Number(value || 0);
+  if (numericValue < 10000) return String(numericValue);
+  return `${(numericValue / 10000).toFixed(1).replace(/\.0$/, '')}万`;
 }
 
 function createImportOverlayState() {
@@ -944,12 +1492,14 @@ async function loadLastDataset() {
   if (!payload?.records?.length) return;
   importedRecords.value = payload.records;
   importWarnings.value = payload.warnings || [];
-  Object.assign(draftFilters, createDefaultFilters());
-  appliedFilters.value = createDefaultFilters();
+  const allFilters = createAllFiltersFromOptions();
+  Object.assign(draftFilters, allFilters);
+  appliedFilters.value = cloneFilters(allFilters);
   selectedBranch.value = '';
   selectedDetailScope.value = 'branch';
   detailKeyword.value = '';
   detailStatus.value = '全部';
+  resetSidePanelExpansion();
   emit('log', `已加载上次培训覆盖地图数据，共 ${importedRecords.value.length} 条`);
 }
 </script>
