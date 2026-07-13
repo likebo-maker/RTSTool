@@ -12,7 +12,8 @@ const HEADER_ALIASES = {
   qualificationTypeCode: ['服务资质类别编码'],
   expiryDate: ['资质有效期', '有效期', '截止日期', '有效截止日期', '资质有效截止日期', '有效截止时间'],
   personName: ['人员姓名', '姓名', '员工姓名', '工程师姓名', '员工/分包商/经销商名称'],
-  organization: ['经销商', '单位', '分包商名称', '员工/分包商/经销商名称']
+  organization: ['经销商', '单位', '分包商名称', '员工/分包商/经销商名称'],
+  institution: ['机构', '所属机构', '服务机构']
 };
 
 const NORMALIZED_ALIAS_LOOKUP = Object.fromEntries(
@@ -125,17 +126,25 @@ export async function parseQualificationFiles(fileList, options = {}) {
         if (shouldExcludeBranch(branch)) continue;
 
         const organization = pickFirstMeaningfulValue(row, columnIndexMap, ['organization']);
+        const institution = pickFirstMeaningfulValue(row, columnIndexMap, ['institution']);
+        const rawRegion = pickFirstMeaningfulValue(row, columnIndexMap, ['region']);
         const personNameCandidate = pickFirstMeaningfulValue(row, columnIndexMap, ['personName']);
         const personName = personNameCandidate || organization || '未命名人员';
         const statusMeta = buildQualificationStatus(expiryRaw);
         const mappedRegion = resolveBranchRegion(branch);
+        const geoLocationName = resolveQualificationGeoLocationName({
+          branch,
+          region: rawRegion,
+          organization,
+          institution
+        });
 
         records.push({
           id: `${file.name}-${sheetName}-${rowIndex + 1}`,
           personName,
           branch,
           mappedRegion,
-          region: pickFirstMeaningfulValue(row, columnIndexMap, ['region']),
+          region: rawRegion,
           productLine: productLine || '未分类产品线',
           machineModel: machineModel || '未标注型号',
           qualificationType: qualificationType || '未标注资质类型',
@@ -145,6 +154,8 @@ export async function parseQualificationFiles(fileList, options = {}) {
           daysUntilExpiry: statusMeta.daysUntilExpiry,
           isCurrentlyValid: statusMeta.isCurrentlyValid,
           organization,
+          institution,
+          geoLocationName,
           sourceFile: file.name,
           sourceSheet: sheetName,
           sourceRow: rowIndex + 1
@@ -244,6 +255,12 @@ function pickFirstMeaningfulValue(row, columnIndexMap, fields) {
     .map((field) => readCellValue(row, columnIndexMap[field]))
     .filter(Boolean);
   return candidates[0] || '';
+}
+
+function resolveQualificationGeoLocationName({ branch, region, organization, institution }) {
+  return [branch, region, organization, institution]
+    .map((value) => String(value || '').trim())
+    .find(Boolean) || '中国区用户服务部';
 }
 
 function readCellValue(row, index) {

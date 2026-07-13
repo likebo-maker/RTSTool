@@ -588,6 +588,7 @@ import QualificationAmap from '../components/QualificationAmap.vue';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
 import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
+import { appendGeoSummaryWarning, batchResolveGeo, loadGeoCache, normalizeGeoMap, normalizeLocationList } from '../services/geoCacheService';
 import {
   buildBranchDetail,
   buildQualificationDashboard,
@@ -626,6 +627,7 @@ const loading = ref(false);
 const restoringView = ref(false);
 const reactivatingView = ref(false);
 const importedRecords = shallowRef([]);
+const geoCacheMap = shallowRef({});
 const importWarnings = ref([]);
 const selectedBranch = ref('');
 const detailKeyword = ref('');
@@ -680,7 +682,7 @@ const branchFilterOptions = computed(() => {
   });
 });
 
-const dashboard = computed(() => buildQualificationDashboard(importedRecords.value, appliedFilters.value));
+const dashboard = computed(() => buildQualificationDashboard(importedRecords.value, appliedFilters.value, geoCacheMap.value));
 const hasData = computed(() => Boolean(importedRecords.value.length));
 const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的资质数据，请调整筛选条件。' : '请导入资质表'));
 const interactionDisabled = computed(() => loading.value || importOverlay.visible);
@@ -1103,21 +1105,28 @@ async function handleFileImport(event) {
     const payload = await parseQualificationFiles(files, {
       onProgress: handleImportProgress
     });
-    updateImportOverlayStep('generate', 'processing', 90, '正在生成分公司地图点位...');
+    updateImportOverlayStep('generate', 'processing', 88, '正在解析地图坐标缓存...');
+    const geoResult = await batchResolveGeo(
+      normalizeLocationList((payload.records || []).map((record) => record.geoLocationName || record.branch)),
+      { allowGeocode: true }
+    );
+    geoCacheMap.value = geoResult.items;
+    updateImportOverlayStep('generate', 'processing', 94, '正在生成分公司地图点位...');
     importedRecords.value = markRaw(payload.records || []);
-    importWarnings.value = payload.warnings || [];
+    importWarnings.value = appendGeoSummaryWarning(payload.warnings || [], geoResult.summary);
     const allFilters = createAllFiltersFromOptions();
     Object.assign(draftFilters, allFilters);
     appliedFilters.value = cloneFilters(allFilters);
     resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP, {
       records: importedRecords.value,
-      warnings: importWarnings.value
+      warnings: importWarnings.value,
+      geoMap: geoCacheMap.value
     });
     await nextTick();
     updateImportOverlayStep('generate', 'completed', 100, '导入完成');
     importOverlay.mode = 'success';
-    emit('log', `资质数据导入完成，共识别 ${payload.records.length} 条记录`);
+    emit('log', `资质数据导入完成，共识别 ${payload.records.length} 条记录；坐标缓存命中 ${geoResult.summary.cache_hit} 个，新增解析 ${geoResult.summary.amap_resolved} 个`);
     window.setTimeout(() => {
       loading.value = false;
       resetImportOverlay();
@@ -1630,6 +1639,7 @@ async function loadLastDataset() {
     return;
   }
   importedRecords.value = markRaw(payload.records || []);
+  geoCacheMap.value = payload.geoMap ? normalizeGeoMap(payload.geoMap) : await loadGeoCache();
   importWarnings.value = payload.warnings || [];
   const allFilters = createAllFiltersFromOptions();
   Object.assign(draftFilters, allFilters);

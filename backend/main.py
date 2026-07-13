@@ -50,6 +50,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - package import path used by launcher
     from backend.services.eclass.router import router as eclass_router
 
+try:
+    from geo_cache_service import geo_cache_service
+except ModuleNotFoundError:  # pragma: no cover - package import path used by launcher
+    from backend.geo_cache_service import geo_cache_service
+
 
 APP_NAME = "技术支持效率平台"
 
@@ -3029,6 +3034,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/runtime-config")
+def runtime_config() -> dict[str, Any]:
+    return {
+        "amap_js_key": os.environ.get("TSEP_AMAP_JS_KEY") or os.environ.get("VITE_AMAP_JS_KEY") or "",
+        "geo_cache_enabled": True,
+    }
+
+
 @app.get("/api/license/machine-code")
 def license_machine_code() -> dict[str, Any]:
     return {"machine_code": get_machine_code(), "enabled": is_license_required()}
@@ -3098,6 +3111,31 @@ def save_local_dataset(tool_key: str, payload: dict[str, Any]) -> dict[str, Any]
     temp_path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
     temp_path.replace(dataset_path)
     return {"success": True, "updatedAt": record["updatedAt"]}
+
+
+@app.get("/api/geo-cache")
+def load_geo_cache() -> dict[str, Any]:
+    cache = geo_cache_service.load_geo_cache()
+    return {"items": cache, "count": len(cache), "cache_path": str(geo_cache_service.cache_path)}
+
+
+@app.post("/api/geo-cache/batch-resolve")
+def batch_resolve_geo_cache(payload: dict[str, Any]) -> dict[str, Any]:
+    locations = payload.get("locations") or payload.get("locationNames") or []
+    if not isinstance(locations, list):
+        raise HTTPException(status_code=400, detail="locations 必须是数组")
+    allow_geocode = bool(payload.get("allow_geocode", payload.get("allowGeocode", True)))
+    return geo_cache_service.batch_resolve_geo([str(item) for item in locations], allow_geocode=allow_geocode)
+
+
+@app.post("/api/geo-cache/resolve")
+def resolve_geo_cache(payload: dict[str, Any]) -> dict[str, Any]:
+    location_name = str(payload.get("location") or payload.get("locationName") or "").strip()
+    if not location_name:
+        raise HTTPException(status_code=400, detail="请输入地点名称")
+    allow_geocode = bool(payload.get("allow_geocode", payload.get("allowGeocode", True)))
+    geo, status = geo_cache_service.resolve_geo(location_name, allow_geocode=allow_geocode)
+    return {"location": location_name, "geo": geo, "status": status}
 
 
 @app.post("/api/process")

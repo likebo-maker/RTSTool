@@ -1,5 +1,6 @@
 import { QUALIFICATION_STATUS_OPTIONS } from './qualificationTypes';
 import { resolveBranchGeo } from './branchGeoMap';
+import { applyPointOffsets, geoInfoToPoint, resolveGeoFromMap } from '../services/geoCacheService';
 
 export const DEFAULT_QUALIFICATION_FILTERS = {
   regions: [],
@@ -38,7 +39,7 @@ function matchesMultiSelect(value, selectedValues) {
   return selectedValues.length > 0 && selectedValues.includes(value);
 }
 
-export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICATION_FILTERS) {
+export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICATION_FILTERS, geoMap = {}) {
   const filteredRecords = applyQualificationFilters(records, filters);
   const branchMap = groupBy(filteredRecords, 'branch');
   const branchStats = Object.entries(branchMap)
@@ -57,18 +58,7 @@ export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICA
     filteredRecords,
     summary,
     branchStats,
-    mapPoints: branchStats
-      .map((item) => {
-        const geo = resolveBranchGeo(item.branch);
-        if (!geo) return null;
-        return {
-          ...item,
-          region: item.region || geo.region || '',
-          city: geo.city,
-          coords: geo.coords
-        };
-      })
-      .filter(Boolean),
+    mapPoints: applyPointOffsets(branchStats.map((item) => buildQualificationMapPoint(item, geoMap))),
     topValidBranches: [...branchStats]
       .sort((left, right) => right.validQualifications - left.validQualifications || right.totalPeople - left.totalPeople),
     topRiskBranches: [...branchStats]
@@ -86,6 +76,24 @@ export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICA
       { label: '90天内到期', value: filteredRecords.filter((record) => record.qualificationStatus === '90天内到期').length },
       { label: '已过期', value: filteredRecords.filter((record) => record.qualificationStatus === '已过期').length }
     ]
+  };
+}
+
+function buildQualificationMapPoint(item, geoMap) {
+  const cachedGeo = resolveGeoFromMap(geoMap, item.geoLocationName || item.branch);
+  const fallbackGeo = resolveBranchGeo(item.branch);
+  const geo = cachedGeo
+    ? geoInfoToPoint(cachedGeo)
+    : fallbackGeo
+      ? { city: fallbackGeo.city, coords: fallbackGeo.coords, geoSource: 'local' }
+      : geoInfoToPoint(null);
+
+  return {
+    ...item,
+    region: item.region || fallbackGeo?.region || '',
+    city: geo.city,
+    coords: geo.coords,
+    geoSource: geo.geoSource
   };
 }
 
@@ -118,6 +126,7 @@ function buildBranchStat(branch, records) {
   return {
     branch,
     region: records[0]?.mappedRegion || '',
+    geoLocationName: records[0]?.geoLocationName || branch,
     totalPeople: countUniquePeople(records),
     validQualifications,
     expiring30,

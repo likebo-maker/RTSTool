@@ -1,5 +1,6 @@
 import { formatPassRate } from './trainingStatusNormalizer';
 import { resolveTrainingCenterGeo } from './trainingCenterMap';
+import { applyPointOffsets, geoInfoToPoint, resolveGeoFromMap } from '../services/geoCacheService';
 
 export const DEFAULT_TRAINING_FILTERS = {
   branches: [],
@@ -41,7 +42,7 @@ function matchesMultiSelect(value, selectedValues) {
   return selectedValues.length > 0 && selectedValues.includes(value);
 }
 
-export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTERS) {
+export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTERS, geoMap = {}) {
   const filteredRecords = applyTrainingFilters(records, filters);
   const branchMap = groupBy(filteredRecords, 'branch');
   const centerMap = groupBy(filteredRecords, 'trainingCenter');
@@ -64,13 +65,7 @@ export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTE
       passRate: formatPassRate(passCount, effectiveCount),
       failCount: filteredRecords.filter((record) => record.isFail).length
     },
-    mapPoints: centerStats
-      .map((item) => {
-        const geo = resolveTrainingCenterGeo(item.trainingCenter, item.trainingCenterCity);
-        if (!geo) return null;
-        return { ...item, branch: item.trainingCenter, city: geo.city, coords: geo.coords };
-      })
-      .filter(Boolean),
+    mapPoints: applyPointOffsets(centerStats.map((item) => buildTrainingMapPoint(item, geoMap))),
     topBranches: [...branchStats]
       .sort((left, right) => right.recordCount - left.recordCount || right.traineeCount - left.traineeCount),
     riskBranches: [...branchStats]
@@ -79,6 +74,24 @@ export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTE
     trainingTypeDistribution: aggregateSeries(filteredRecords, 'trainingType'),
     trendSeries: buildTrainingTrendSeries(filteredRecords),
     previewRows: filteredRecords.slice(0, 500)
+  };
+}
+
+function buildTrainingMapPoint(item, geoMap) {
+  const cachedGeo = resolveGeoFromMap(geoMap, item.geoLocationName || item.trainingCenter);
+  const fallbackGeo = resolveTrainingCenterGeo(item.trainingCenter, item.trainingCenterCity);
+  const geo = cachedGeo
+    ? geoInfoToPoint(cachedGeo)
+    : fallbackGeo
+      ? { city: fallbackGeo.city, coords: fallbackGeo.coords, geoSource: 'local' }
+      : geoInfoToPoint(null);
+
+  return {
+    ...item,
+    branch: item.trainingCenter,
+    city: geo.city,
+    coords: geo.coords,
+    geoSource: geo.geoSource
   };
 }
 
@@ -144,6 +157,7 @@ function buildTrainingCenterStat(trainingCenter, records) {
     branch: trainingCenter,
     trainingCenter,
     trainingCenterCity: records[0]?.trainingCenterCity || '',
+    geoLocationName: records[0]?.geoLocationName || trainingCenter,
     mappedRegion: records[0]?.mappedRegion || '未匹配大区',
     traineeCount,
     recordCount,

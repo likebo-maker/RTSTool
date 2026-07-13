@@ -542,7 +542,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue';
 import {
   AlertTriangle,
   Award,
@@ -575,6 +575,7 @@ import QualificationFilterSelect from '../components/QualificationFilterSelect.v
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
 import TrainingCoverageAmap from '../components/TrainingCoverageAmap.vue';
 import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
+import { appendGeoSummaryWarning, batchResolveGeo, loadGeoCache, normalizeGeoMap, normalizeLocationList } from '../services/geoCacheService';
 import { buildTrainingBranchDetail, buildTrainingDashboard, collectTrainingOptions, DEFAULT_TRAINING_FILTERS } from '../utils/trainingAggregator';
 import { exportBranchTrainingRecords, exportTrainingRecords } from '../utils/exportTrainingExcel';
 import { parseTrainingFiles } from '../utils/trainingParser';
@@ -602,6 +603,7 @@ const pageRef = ref(null);
 const fileInputRef = ref(null);
 const loading = ref(false);
 const importedRecords = ref([]);
+const geoCacheMap = shallowRef({});
 const importWarnings = ref([]);
 const displayMode = ref('training-count');
 const fullscreenFiltersOpen = ref(false);
@@ -654,7 +656,7 @@ const branchOptions = computed(() => {
   });
 });
 
-const dashboard = computed(() => buildTrainingDashboard(importedRecords.value, appliedFilters.value));
+const dashboard = computed(() => buildTrainingDashboard(importedRecords.value, appliedFilters.value, geoCacheMap.value));
 const hasData = computed(() => Boolean(importedRecords.value.length));
 const interactionDisabled = computed(() => loading.value || importOverlay.visible);
 const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的培训数据，请调整筛选条件。' : '请导入培训表'));
@@ -1036,21 +1038,28 @@ async function handleFileImport(event) {
   try {
     emit('log', `开始导入培训表，共 ${files.length} 个文件`);
     const payload = await parseTrainingFiles(files, { onProgress: handleImportProgress });
-    updateImportOverlayStep('generate', 'processing', 90, '正在生成地图与分析数据...');
+    updateImportOverlayStep('generate', 'processing', 88, '正在解析地图坐标缓存...');
+    const geoResult = await batchResolveGeo(
+      normalizeLocationList((payload.records || []).map((record) => record.geoLocationName || record.trainingCenter || record.branch)),
+      { allowGeocode: true }
+    );
+    geoCacheMap.value = geoResult.items;
+    updateImportOverlayStep('generate', 'processing', 94, '正在生成地图与分析数据...');
     importedRecords.value = payload.records;
-    importWarnings.value = payload.warnings || [];
+    importWarnings.value = appendGeoSummaryWarning(payload.warnings || [], geoResult.summary);
     const allFilters = createAllFiltersFromOptions();
     Object.assign(draftFilters, allFilters);
     appliedFilters.value = cloneFilters(allFilters);
     resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.TRAINING_COVERAGE_MAP, {
       records: importedRecords.value,
-      warnings: importWarnings.value
+      warnings: importWarnings.value,
+      geoMap: geoCacheMap.value
     });
     await nextTick();
     updateImportOverlayStep('generate', 'completed', 100, '导入完成');
     importOverlay.mode = 'success';
-    emit('log', `培训数据导入完成，共识别 ${payload.records.length} 条记录`);
+    emit('log', `培训数据导入完成，共识别 ${payload.records.length} 条记录；坐标缓存命中 ${geoResult.summary.cache_hit} 个，新增解析 ${geoResult.summary.amap_resolved} 个`);
     window.setTimeout(() => {
       loading.value = false;
       resetImportOverlay();
@@ -1491,6 +1500,7 @@ async function loadLastDataset() {
   const payload = record?.payload;
   if (!payload?.records?.length) return;
   importedRecords.value = payload.records;
+  geoCacheMap.value = payload.geoMap ? normalizeGeoMap(payload.geoMap) : await loadGeoCache();
   importWarnings.value = payload.warnings || [];
   const allFilters = createAllFiltersFromOptions();
   Object.assign(draftFilters, allFilters);

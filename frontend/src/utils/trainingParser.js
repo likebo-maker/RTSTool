@@ -104,13 +104,24 @@ export async function parseTrainingFiles(fileList, options = {}) {
         const rawBranch = pickFirstMeaningfulValue(row, columnIndexMap, ['branch']);
         const branch = rawBranch;
         const normalizedBranch = normalizeTrainingBranchName(rawBranch);
+        const rawRegion = readCellValue(row, columnIndexMap.region);
         const mappedRegion = columnIndexMap.region !== undefined
-          ? resolveRegionFallback(readCellValue(row, columnIndexMap.region), normalizedBranch || branch)
+          ? resolveRegionFallback(rawRegion, normalizedBranch || branch)
           : resolveRegionFallback('', normalizedBranch || branch);
         const productLine = pickFirstMeaningfulValue(row, columnIndexMap, ['productLine']);
         const trainingType = pickFirstMeaningfulValue(row, columnIndexMap, ['trainingType']) || '未知';
-        const location = pickFirstMeaningfulValue(row, columnIndexMap, ['trainingPlace', 'location', 'organizer']) || '未知';
+        const organizer = pickFirstMeaningfulValue(row, columnIndexMap, ['organizer']);
+        const trainingCenterField = pickFirstMeaningfulValue(row, columnIndexMap, ['location']);
+        const trainingPlace = pickFirstMeaningfulValue(row, columnIndexMap, ['trainingPlace']);
+        const location = trainingPlace || trainingCenterField || organizer || '未知';
         const trainingCenterMeta = resolveTrainingCenter(location);
+        const geoLocationName = resolveTrainingGeoLocationName({
+          organizer,
+          trainingCenter: trainingCenterField || trainingCenterMeta.center,
+          trainingPlace,
+          region: rawRegion,
+          branch
+        });
         const courseName = pickFirstMeaningfulValue(row, columnIndexMap, ['courseName']) || '未知课程';
         const lecturer = pickFirstMeaningfulValue(row, columnIndexMap, ['lecturer']) || '未知';
         const studentName = pickFirstMeaningfulValue(row, columnIndexMap, ['studentName']);
@@ -146,7 +157,8 @@ export async function parseTrainingFiles(fileList, options = {}) {
           trainingLocation: location,
           trainingCenter: trainingCenterMeta.center,
           trainingCenterCity: trainingCenterMeta.city,
-          organizer: pickFirstMeaningfulValue(row, columnIndexMap, ['organizer']) || location,
+          organizer: organizer || location,
+          geoLocationName,
           courseName,
           lecturer,
           studentName: studentName || '',
@@ -248,6 +260,13 @@ function scaleProgress(ratio, start, end) {
 function pickFirstMeaningfulValue(row, columnIndexMap, fields) {
   const candidates = fields.map((field) => readCellValue(row, columnIndexMap[field])).filter(Boolean);
   return candidates[0] || '';
+}
+
+function resolveTrainingGeoLocationName({ organizer, trainingCenter, trainingPlace, region, branch }) {
+  const candidates = [organizer, trainingCenter, trainingPlace, region, branch]
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && value !== '未知' && value !== '未知培训中心');
+  return candidates[0] || '中国区用户服务部';
 }
 
 function readCellValue(row, index) {
