@@ -72,6 +72,10 @@ const props = defineProps({
   searchPlaceholder: {
     type: String,
     default: '输入关键字搜索'
+  },
+  preserveExternalValues: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -83,7 +87,9 @@ const rootRef = ref(null);
 const allCheckboxRef = ref(null);
 
 const normalizedOptions = computed(() => [...new Set(props.options.filter(Boolean))]);
-const selectedValues = computed(() => props.modelValue.filter((value) => normalizedOptions.value.includes(value)));
+const selectedValues = computed(() => {
+  return props.modelValue.filter((value) => normalizedOptions.value.includes(value));
+});
 const selectedSet = computed(() => new Set(selectedValues.value));
 
 const filteredOptions = computed(() => {
@@ -150,6 +156,8 @@ function syncAllCheckboxState() {
 }
 
 function pruneInvalidValues() {
+  if (props.preserveExternalValues) return;
+  if (!props.modelValue.length) return;
   if (selectedValues.value.length === props.modelValue.length) return;
   emit('update:modelValue', selectedValues.value);
 }

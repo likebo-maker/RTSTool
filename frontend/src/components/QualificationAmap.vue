@@ -2,16 +2,16 @@
   <section class="glass-panel qualification-map-panel">
     <div class="panel-title-row">
       <div>
-        <p class="section-kicker">National Distribution</p>
+        <p class="section-kicker">Offline Distribution</p>
         <h2>中国区资质地图</h2>
       </div>
       <span class="status-pill" :class="mapReady ? 'success' : 'warning'">
-        {{ mapReady ? '地图已就绪' : '地图初始化中' }}
+        {{ mapReady ? '离线地图已就绪' : '离线地图初始化中' }}
       </span>
     </div>
 
     <div class="qualification-map-shell">
-      <div ref="mapRef" class="qualification-amap-root"></div>
+      <div ref="chartRef" class="qualification-amap-root"></div>
 
       <div class="qualification-map-legend">
         <span class="qualification-map-legend-title">风险图例</span>
@@ -64,8 +64,9 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import * as echarts from 'echarts';
+import ChinaMapPackage from 'china-map-geojson';
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
-import { loadAmapSdk } from '../utils/amapLoader';
 import { getQualificationRegionGroups } from '../utils/branchGeoMap';
 
 const props = defineProps({
@@ -113,6 +114,49 @@ const props = defineProps({
 
 const emit = defineEmits(['select-branch']);
 
+const CHINA_MAP_NAME = 'qualification-offline-china';
+const CHINA_GEO_JSON = ChinaMapPackage.ChinaData || ChinaMapPackage.default?.ChinaData || ChinaMapPackage;
+const PROVINCE_NAME_BY_ADCODE = {
+  110000: '北京',
+  120000: '天津',
+  130000: '河北',
+  140000: '山西',
+  150000: '内蒙古',
+  210000: '辽宁',
+  220000: '吉林',
+  230000: '黑龙江',
+  310000: '上海',
+  320000: '江苏',
+  330000: '浙江',
+  340000: '安徽',
+  350000: '福建',
+  360000: '江西',
+  370000: '山东',
+  410000: '河南',
+  420000: '湖北',
+  430000: '湖南',
+  440000: '广东',
+  450000: '广西',
+  460000: '海南',
+  500000: '重庆',
+  510000: '四川',
+  520000: '贵州',
+  530000: '云南',
+  540000: '西藏',
+  610000: '陕西',
+  620000: '甘肃',
+  630000: '青海',
+  640000: '宁夏',
+  650000: '新疆'
+};
+
+const chartRef = ref(null);
+const mapReady = ref(false);
+const errorMessage = ref('');
+let chartInstance = null;
+let registered = false;
+let previousFocusIndex = -1;
+
 const regionLegendItems = computed(() => {
   const regionCounts = new Map();
   props.points.forEach((point) => {
@@ -126,118 +170,58 @@ const regionLegendItems = computed(() => {
     count: regionCounts.get(region.name) || 0
   }));
 
-  items.push({
-    name: '未匹配大区',
-    color: '#94a3b8',
-    count: regionCounts.get('未匹配大区') || 0
-  });
+  const unmatchedCount = regionCounts.get('未匹配大区') || 0;
+  if (unmatchedCount) {
+    items.push({
+      name: '未匹配大区',
+      color: '#94a3b8',
+      count: unmatchedCount
+    });
+  }
   return items;
 });
 
-const mapRef = ref(null);
-const mapReady = ref(false);
-const errorMessage = ref('');
-let mapInstance = null;
-let markers = [];
-let labelMarkers = [];
-let regionLayers = [];
-let infoWindow = null;
-let resizeTimerIds = [];
-
-const MAP_INTERACTION_STATUS = {
-  dragEnable: true,
-  zoomEnable: true,
-  scrollWheel: true,
-  doubleClickZoom: true,
-  keyboardEnable: true,
-  touchZoom: true
-};
-
 onMounted(async () => {
-  window.addEventListener('resize', scheduleMapResize);
-  document.addEventListener('fullscreenchange', scheduleMapResize);
+  window.addEventListener('resize', handleResize);
   await nextTick();
-  await initMap();
+  initChart();
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', scheduleMapResize);
-  document.removeEventListener('fullscreenchange', scheduleMapResize);
-  resizeTimerIds.forEach((timerId) => window.clearTimeout(timerId));
-  resizeTimerIds = [];
-  markers.forEach((marker) => marker.setMap?.(null));
-  markers = [];
-  clearLabelMarkers();
-  clearRegionLayers();
-  if (infoWindow) infoWindow.close();
-  mapInstance?.destroy?.();
-  mapInstance = null;
+  window.removeEventListener('resize', handleResize);
+  disposeChart();
 });
 
 watch(
   () => props.points,
-  () => {
-    renderMarkers();
-  },
+  () => renderChart(),
   { deep: true }
 );
 
 watch(
   () => props.selectedBranch,
-  () => {
-    updateMarkerActiveState();
-  }
+  () => applyFocus()
 );
 
 watch(
   () => props.focusedBranch,
-  () => {
-    updateMarkerActiveState();
-    renderPresentationLabels();
-    if (!props.focusedBranch) {
-      infoWindow?.close();
-      return;
-    }
-    openFocusedInfoWindow();
-  }
+  () => applyFocus()
 );
 
 watch(
   () => props.presentationMode,
-  () => {
-    renderPresentationLabels();
-    updateMarkerActiveState();
-    if (!props.presentationMode) {
-      infoWindow?.close();
-      return;
-    }
-    openFocusedInfoWindow();
-  }
-);
-
-watch(
-  () => props.labelBranches,
-  () => {
-    renderPresentationLabels();
-  },
-  { deep: true }
+  () => renderChart()
 );
 
 watch(
   () => props.selectedRegions,
-  () => {
-    renderRegionLayers();
-  },
+  () => renderChart(),
   { deep: true }
 );
 
 watch(
   () => props.loading,
-  (isLoading) => {
-    if (!isLoading) {
-      renderMarkers();
-    }
-  }
+  () => renderChart()
 );
 
 watch(
@@ -245,291 +229,241 @@ watch(
   async (isActive) => {
     if (!isActive) return;
     await nextTick();
-    scheduleMapResize();
+    renderChart();
+    chartInstance?.resize();
   }
 );
 
 watch(
   () => props.fullscreenActive,
-  () => {
-    scheduleMapResize();
+  async () => {
+    await nextTick();
+    handleResize();
   }
 );
 
-async function scheduleMapResize() {
-  await nextTick();
-  resizeTimerIds.forEach((timerId) => window.clearTimeout(timerId));
-  resizeTimerIds = [60, 180, 420, 760].map((delay) => window.setTimeout(() => {
-    if (!mapInstance) return;
-    mapInstance.resize?.();
-    enableMapInteractions();
-    renderRegionLayers();
-    if (!markers.length && props.points.length) {
-      renderMarkers({ fitView: false });
-    } else {
-      updateMarkerActiveState();
-      renderPresentationLabels();
-      openFocusedInfoWindow();
-    }
-  }, delay));
-}
-
-async function initMap() {
+function initChart() {
+  if (!chartRef.value) return;
   try {
-    const AMap = await loadAmapSdk();
-    if (!mapRef.value) return;
-    await waitForStableMapSize();
-
-    mapInstance = new AMap.Map(mapRef.value, {
-      zoom: 4.5,
-      center: [104.195397, 35.86166],
-      mapStyle: 'amap://styles/dark',
-      resizeEnable: true,
-      ...MAP_INTERACTION_STATUS
-    });
-    enableMapInteractions();
-    mapInstance.addControl(new AMap.Scale());
-    mapInstance.addControl(new AMap.ToolBar({ position: 'RB' }));
+    registerChinaMap();
+    chartInstance = echarts.init(chartRef.value);
+    chartInstance.on('click', handleChartClick);
     mapReady.value = true;
-    renderRegionLayers();
-    renderMarkers();
-    scheduleMapResize();
+    renderChart();
   } catch (error) {
-    errorMessage.value = error.message || '高德地图初始化失败，请检查网络或 key 配置';
+    errorMessage.value = error.message || '离线地图初始化失败';
   }
 }
 
-function enableMapInteractions() {
-  mapInstance?.setStatus?.(MAP_INTERACTION_STATUS);
+function registerChinaMap() {
+  if (registered) return;
+  echarts.registerMap(CHINA_MAP_NAME, CHINA_GEO_JSON);
+  registered = true;
 }
 
-async function waitForStableMapSize() {
-  for (let index = 0; index < 8; index += 1) {
-    await nextTick();
-    const rect = mapRef.value?.getBoundingClientRect?.();
-    if (rect?.width > 0 && rect?.height > 0) return true;
-    await new Promise((resolve) => window.setTimeout(resolve, 80));
-  }
-  return false;
-}
-
-function renderMarkers(options = {}) {
-  if (!mapInstance || props.loading) return;
-  const { fitView = true } = options;
-
-  markers.forEach((marker) => marker.setMap?.(null));
-  markers = [];
-  clearLabelMarkers();
-  if (infoWindow) infoWindow.close();
-
-  if (!props.points.length) return;
-
-  const AMap = window.AMap;
-  props.points.forEach((point) => {
-    const markerElement = document.createElement('button');
-    markerElement.className = `qualification-map-marker training-map-point ${resolveRiskClass(point.riskLevel)}`;
-    markerElement.style.width = '20px';
-    markerElement.style.height = '20px';
-    markerElement.innerHTML = '<span></span>';
-    markerElement.type = 'button';
-
-    const marker = new AMap.Marker({
-      position: point.coords,
-      content: markerElement,
-      anchor: 'center',
-      zIndex: 200
-    });
-
-    const selectMarker = () => {
-      markerElement.blur();
-      marker.setTop?.(true);
-      emit('select-branch', point.branch);
-      openInfoWindow(point, marker);
-    };
-
-    markerElement.addEventListener('mouseenter', () => {
-      openInfoWindow(point, marker);
-    });
-    markerElement.addEventListener('mouseleave', () => {
-      if (props.presentationMode) return;
-      window.setTimeout(() => infoWindow?.close(), 120);
-    });
-    markerElement.addEventListener('click', selectMarker);
-    marker.on?.('mouseover', () => openInfoWindow(point, marker));
-    marker.on?.('mouseout', () => {
-      if (props.presentationMode) return;
-      window.setTimeout(() => infoWindow?.close(), 120);
-    });
-    marker.on?.('click', selectMarker);
-
-    marker.__branch = point.branch;
-    marker.__element = markerElement;
-    marker.setMap(mapInstance);
-    markers.push(marker);
+function renderChart() {
+  if (!chartInstance || props.loading) return;
+  chartInstance.setOption(buildMapOption(), true);
+  chartInstance.resize();
+  previousFocusIndex = -1;
+  applyFocus();
+  requestAnimationFrame(() => {
+    chartInstance?.resize();
+    applyFocus();
   });
-
-  if (fitView) {
-    mapInstance.setFitView(markers, false, [80, 40, 40, 60]);
-  }
-  enableMapInteractions();
-  updateMarkerActiveState();
-  renderPresentationLabels();
-  openFocusedInfoWindow();
 }
 
-function renderRegionLayers() {
-  if (!mapInstance || !window.AMap?.DistrictLayer?.Province) return;
-
-  clearRegionLayers();
-  const selectedRegionSet = new Set(props.selectedRegions || []);
-
-  getQualificationRegionGroups().forEach((region) => {
-    const isActive = !selectedRegionSet.size || selectedRegionSet.has(region.name);
-    const layer = new window.AMap.DistrictLayer.Province({
-      zIndex: 12,
-      adcode: region.adcodes,
-      depth: 0,
-      styles: {
-        fill: isActive ? region.fill : 'rgba(255,255,255,0.025)',
-        'province-stroke': isActive ? region.color : 'rgba(255,255,255,0.08)',
-        'city-stroke': 'rgba(255,255,255,0.14)',
-        'county-stroke': 'rgba(255,255,255,0.04)'
+function buildMapOption() {
+  const scatterData = props.points
+    .filter((point) => Array.isArray(point.coords) && point.coords.length >= 2)
+    .map((point) => ({
+      name: point.branch,
+      branch: point.branch,
+      point,
+      value: [Number(point.coords[0]), Number(point.coords[1]), Number(point.validQualifications || 0)],
+      itemStyle: {
+        color: resolveRiskColor(point.riskLevel)
+      },
+      label: {
+        show: shouldShowPointLabel(point),
+        formatter: `${point.branch}\n${Number(point.validQualifications || 0).toLocaleString('zh-CN')}`
       }
+    }));
+
+  return {
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'item',
+      confine: true,
+      borderColor: 'rgba(96, 165, 250, 0.35)',
+      backgroundColor: 'rgba(8, 15, 30, 0.94)',
+      textStyle: { color: '#e5f2ff' },
+      formatter: (params) => {
+        if (params.data?.point) return buildPointTooltip(params.data.point);
+        return params.name || '';
+      }
+    },
+    geo: {
+      map: CHINA_MAP_NAME,
+      roam: true,
+      zoom: 1.16,
+      center: [104.2, 35.8],
+      scaleLimit: { min: 0.9, max: 8 },
+      label: { show: false },
+      itemStyle: {
+        areaColor: 'rgba(15, 23, 42, 0.72)',
+        borderColor: 'rgba(125, 211, 252, 0.22)',
+        borderWidth: 1
+      },
+      emphasis: {
+        label: {
+          show: true,
+          color: '#e0f2fe'
+        },
+        itemStyle: {
+          areaColor: 'rgba(14, 165, 233, 0.36)'
+        }
+      },
+      regions: buildRegionStyles()
+    },
+    series: [
+      {
+        name: '资质覆盖',
+        type: 'effectScatter',
+        coordinateSystem: 'geo',
+        data: scatterData,
+        symbolSize: (value) => {
+          const count = Number(value?.[2] || 0);
+          return Math.max(10, Math.min(30, 9 + Math.sqrt(count) * 1.4));
+        },
+        rippleEffect: {
+          brushType: 'stroke',
+          scale: 3.4
+        },
+        emphasis: {
+          scale: 1.25,
+          label: {
+            show: true,
+            color: '#ffffff',
+            fontWeight: 700,
+            formatter: ({ data }) => data?.branch || ''
+          }
+        },
+        label: {
+          color: '#e0f2fe',
+          fontWeight: 700,
+          textBorderColor: 'rgba(8, 15, 30, 0.95)',
+          textBorderWidth: 3,
+          distance: 8,
+          position: 'top'
+        },
+        zlevel: 5
+      }
+    ]
+  };
+}
+
+function buildRegionStyles() {
+  const selectedRegionSet = new Set(props.selectedRegions || []);
+  return getQualificationRegionGroups().flatMap((region) => {
+    const isActive = !selectedRegionSet.size || selectedRegionSet.has(region.name);
+    return region.adcodes
+      .map((adcode) => PROVINCE_NAME_BY_ADCODE[adcode])
+      .filter(Boolean)
+      .map((name) => ({
+        name,
+        itemStyle: {
+          areaColor: isActive ? region.fill : 'rgba(255, 255, 255, 0.028)',
+          borderColor: isActive ? region.color : 'rgba(255, 255, 255, 0.08)',
+          borderWidth: isActive ? 1.1 : 0.6
+        },
+        emphasis: {
+          itemStyle: {
+            areaColor: isActive ? region.hoverFill : 'rgba(255, 255, 255, 0.06)'
+          }
+        }
+      }));
+  });
+}
+
+function shouldShowPointLabel(point) {
+  if (!props.presentationMode) return false;
+  if (props.focusedBranch && point.branch === props.focusedBranch) return true;
+  return props.labelBranches.includes(point.branch);
+}
+
+function handleChartClick(params) {
+  const branch = params?.data?.point?.branch || params?.data?.branch;
+  if (!branch) return;
+  emit('select-branch', branch);
+}
+
+function applyFocus() {
+  if (!chartInstance) return;
+  if (previousFocusIndex >= 0) {
+    chartInstance.dispatchAction({
+      type: 'downplay',
+      seriesIndex: 0,
+      dataIndex: previousFocusIndex
     });
-    layer.setMap(mapInstance);
-    regionLayers.push(layer);
+  }
+
+  const targetBranch = props.focusedBranch || props.selectedBranch;
+  if (!targetBranch) {
+    chartInstance.dispatchAction({ type: 'hideTip' });
+    previousFocusIndex = -1;
+    return;
+  }
+
+  const dataIndex = props.points.findIndex((point) => point.branch === targetBranch);
+  if (dataIndex < 0) {
+    previousFocusIndex = -1;
+    return;
+  }
+
+  chartInstance.dispatchAction({
+    type: 'highlight',
+    seriesIndex: 0,
+    dataIndex
   });
-}
-
-function clearRegionLayers() {
-  if (!regionLayers.length) return;
-  regionLayers.forEach((layer) => layer.setMap?.(null));
-  regionLayers = [];
-}
-
-function updateMarkerActiveState() {
-  markers.forEach((marker) => {
-    const isActive = marker.__branch === props.selectedBranch;
-    const isFocused = props.presentationMode && marker.__branch === props.focusedBranch;
-    marker.__element?.classList.toggle('active', isActive || isFocused);
-    marker.__element?.classList.toggle('presentation-focus', isFocused);
-    if (isFocused) {
-      marker.setTop?.(true);
-      marker.setzIndex?.(500);
-    } else {
-      marker.setzIndex?.(200);
-    }
+  chartInstance.dispatchAction({
+    type: 'showTip',
+    seriesIndex: 0,
+    dataIndex
   });
+  previousFocusIndex = dataIndex;
 }
 
-function renderPresentationLabels() {
-  if (!mapInstance) return;
-  clearLabelMarkers();
-  if (!props.presentationMode || !props.points.length) return;
-
-  const AMap = window.AMap;
-  if (!AMap) return;
-  const pointByBranch = new Map(props.points.map((point) => [point.branch, point]));
-  const focusedPoint = pointByBranch.get(props.focusedBranch) || pointByBranch.get(props.labelBranches[0]);
-  const labelPoints = focusedPoint ? [focusedPoint] : [];
-  labelPoints.forEach((point, index) => {
-    const marker = new AMap.Marker({
-      position: point.coords,
-      content: buildPermanentLabelContent(point, index, true),
-      anchor: 'bottom-center',
-      offset: resolveLabelOffset(index),
-      zIndex: 560
-    });
-    marker.setMap(mapInstance);
-    labelMarkers.push(marker);
-  });
+function handleResize() {
+  chartInstance?.resize();
 }
 
-function clearLabelMarkers() {
-  if (!labelMarkers.length) return;
-  labelMarkers.forEach((marker) => marker.setMap?.(null));
-  labelMarkers = [];
+function disposeChart() {
+  if (!chartInstance) return;
+  chartInstance.off('click', handleChartClick);
+  chartInstance.dispose();
+  chartInstance = null;
+  previousFocusIndex = -1;
 }
 
-function buildPermanentLabelContent(point, index, isFocused = false) {
-  const element = document.createElement('div');
-  element.className = `qualification-map-label ${resolveRiskClass(point.riskLevel)} label-${index % 6}${isFocused ? ' auto-focus-label' : ''}`;
-  element.innerHTML = `
-    <span class="qualification-map-label-line"></span>
-    <strong>${escapeHtml(point.branch)}</strong>
-    <em>${isFocused ? `轮播讲解｜${point.validQualifications}` : point.validQualifications}</em>
+function buildPointTooltip(point) {
+  return `
+    <div class="qualification-map-info-window">
+      <strong>${escapeHtml(point.branch)}</strong>
+      <span>所属大区：${escapeHtml(point.region || '未匹配大区')}</span>
+      <span>有效资质数：${Number(point.validQualifications || 0).toLocaleString('zh-CN')}</span>
+      <span>持证人数：${Number(point.totalPeople || 0).toLocaleString('zh-CN')}</span>
+      <span>覆盖渠道商：${Number(point.coveredContractors || 0).toLocaleString('zh-CN')}</span>
+      <span>主要产品线：${escapeHtml(point.primaryProductLines)}</span>
+      <span>风险等级：${escapeHtml(point.riskLevel)}</span>
+    </div>
   `;
-  return element;
 }
 
-function resolveLabelOffset(index) {
-  const AMap = window.AMap;
-  const offsets = [
-    [72, -16],
-    [-72, -16],
-    [76, -58],
-    [-76, -58],
-    [0, -78],
-    [0, 30]
-  ];
-  const [x, y] = offsets[index % offsets.length];
-  return new AMap.Pixel(x, y);
-}
-
-function openFocusedInfoWindow() {
-  if (!props.presentationMode || !props.focusedBranch || !mapInstance) return;
-  const marker = markers.find((item) => item.__branch === props.focusedBranch);
-  const point = props.points.find((item) => item.branch === props.focusedBranch);
-  if (!marker || !point) return;
-  openInfoWindow(point, marker);
-  if (props.fullscreenActive && shouldPanToPoint(point.coords)) {
-    mapInstance.panTo?.(point.coords);
-  }
-}
-
-function shouldPanToPoint(coords) {
-  if (!mapInstance || !coords?.length) return false;
-  const AMap = window.AMap;
-  if (!AMap) return false;
-  try {
-    const bounds = mapInstance.getBounds?.();
-    const lngLat = new AMap.LngLat(coords[0], coords[1]);
-    return !bounds?.contains?.(lngLat);
-  } catch {
-    return false;
-  }
-}
-
-function openInfoWindow(point, marker) {
-  const AMap = window.AMap;
-  if (!AMap) return;
-  if (!infoWindow) {
-    infoWindow = new AMap.InfoWindow({
-      offset: new AMap.Pixel(0, -18),
-      isCustom: true,
-      autoMove: false
-    });
-  }
-  const content = document.createElement('div');
-  content.className = 'qualification-map-info-window';
-  content.innerHTML = `
-    <strong>${escapeHtml(point.branch)}</strong>
-    <span>所属大区：${escapeHtml(point.region || '未匹配大区')}</span>
-    <span>有效资质数：${point.validQualifications}</span>
-    <span>持证人数：${point.totalPeople}</span>
-    <span>30天内到期：${point.expiring30}</span>
-    <span>已过期：${point.expiredQualifications}</span>
-    <span>主要产品线：${escapeHtml(point.primaryProductLines)}</span>
-    <span>风险等级：${escapeHtml(point.riskLevel)}</span>
-  `;
-  infoWindow.setContent(content);
-  infoWindow.open(mapInstance, marker.getPosition());
-}
-
-function resolveRiskClass(riskLevel) {
-  if (riskLevel === '高风险') return 'critical';
-  if (riskLevel === '关注') return 'warning';
-  return 'good';
+function resolveRiskColor(riskLevel) {
+  if (riskLevel === '高风险') return '#ff5d73';
+  if (riskLevel === '关注') return '#fbbf24';
+  return '#00ff88';
 }
 
 function escapeHtml(text) {

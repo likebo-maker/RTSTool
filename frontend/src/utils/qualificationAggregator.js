@@ -1,10 +1,12 @@
 import { QUALIFICATION_STATUS_OPTIONS } from './qualificationTypes';
 import { resolveBranchGeo } from './branchGeoMap';
-import { applyPointOffsets, geoInfoToPoint, resolveGeoFromMap } from '../services/geoCacheService';
+import { applyPointOffsets } from '../services/geoCacheService';
+import { NO_CONTRACTOR_LABEL } from './qualificationBranchResolver';
 
 export const DEFAULT_QUALIFICATION_FILTERS = {
   regions: [],
   branches: [],
+  contractors: [],
   productLines: [],
   machineModels: [],
   qualificationTypes: [],
@@ -15,6 +17,10 @@ export function collectQualificationOptions(records) {
   return {
     regions: sortTextValues(uniqueValues(records.map((record) => record.mappedRegion))),
     branches: sortTextValues(uniqueValues(records.map((record) => record.branch))),
+    contractors: sortTextValues(uniqueValues(records
+      .filter((record) => record.isChannelPartner)
+      .map((record) => record.contractorFilterValue)
+      .filter((value) => value && value !== NO_CONTRACTOR_LABEL))),
     productLines: sortTextValues(uniqueValues(records.map((record) => record.productLine))),
     machineModels: sortTextValues(uniqueValues(records.map((record) => record.machineModel))),
     qualificationTypes: sortTextValues(uniqueValues(records.map((record) => record.qualificationType))),
@@ -26,6 +32,7 @@ export function applyQualificationFilters(records, filters = DEFAULT_QUALIFICATI
   return records.filter((record) => {
     if (!matchesMultiSelect(record.mappedRegion, filters.regions)) return false;
     if (!matchesMultiSelect(record.branch, filters.branches)) return false;
+    if (!matchesMultiSelect(record.contractorFilterValue || NO_CONTRACTOR_LABEL, filters.contractors)) return false;
     if (!matchesMultiSelect(record.productLine, filters.productLines)) return false;
     if (!matchesMultiSelect(record.machineModel, filters.machineModels)) return false;
     if (!matchesMultiSelect(record.qualificationType, filters.qualificationTypes)) return false;
@@ -36,7 +43,8 @@ export function applyQualificationFilters(records, filters = DEFAULT_QUALIFICATI
 
 function matchesMultiSelect(value, selectedValues) {
   if (!Array.isArray(selectedValues)) return true;
-  return selectedValues.length > 0 && selectedValues.includes(value);
+  if (!selectedValues.length) return false;
+  return selectedValues.includes(value);
 }
 
 export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICATION_FILTERS, geoMap = {}) {
@@ -51,14 +59,15 @@ export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICA
     validQualifications: filteredRecords.filter((record) => record.isCurrentlyValid).length,
     expiringSoon: filteredRecords.filter((record) => record.qualificationStatus === '30天内到期').length,
     expiredQualifications: filteredRecords.filter((record) => record.qualificationStatus === '已过期').length,
-    coveredBranches: branchStats.length
+    coveredBranches: branchStats.length,
+    coveredContractors: countUniqueContractors(filteredRecords)
   };
 
   return {
     filteredRecords,
     summary,
     branchStats,
-    mapPoints: applyPointOffsets(branchStats.map((item) => buildQualificationMapPoint(item, geoMap))),
+    mapPoints: applyPointOffsets(branchStats.map((item) => buildQualificationMapPoint(item, geoMap)).filter(Boolean)),
     topValidBranches: [...branchStats]
       .sort((left, right) => right.validQualifications - left.validQualifications || right.totalPeople - left.totalPeople),
     topRiskBranches: [...branchStats]
@@ -80,20 +89,15 @@ export function buildQualificationDashboard(records, filters = DEFAULT_QUALIFICA
 }
 
 function buildQualificationMapPoint(item, geoMap) {
-  const cachedGeo = resolveGeoFromMap(geoMap, item.geoLocationName || item.branch);
   const fallbackGeo = resolveBranchGeo(item.branch);
-  const geo = cachedGeo
-    ? geoInfoToPoint(cachedGeo)
-    : fallbackGeo
-      ? { city: fallbackGeo.city, coords: fallbackGeo.coords, geoSource: 'local' }
-      : geoInfoToPoint(null);
+  if (!fallbackGeo) return null;
 
   return {
     ...item,
-    region: item.region || fallbackGeo?.region || '',
-    city: geo.city,
-    coords: geo.coords,
-    geoSource: geo.geoSource
+    region: item.region || fallbackGeo.region || '',
+    city: fallbackGeo.city,
+    coords: fallbackGeo.coords,
+    geoSource: 'local'
   };
 }
 
@@ -129,6 +133,7 @@ function buildBranchStat(branch, records) {
     geoLocationName: records[0]?.geoLocationName || branch,
     totalPeople: countUniquePeople(records),
     validQualifications,
+    coveredContractors: countUniqueContractors(records),
     expiring30,
     expiring60,
     expiring90,
@@ -164,9 +169,22 @@ function aggregateValueSeries(records, field, limit = Infinity) {
 
 function countUniquePeople(records) {
   const keys = new Set(
-    records.map((record) => `${record.personName || '未命名人员'}|${record.branch || ''}|${record.organization || ''}`)
+    records.map((record) => {
+      const employeeId = String(record.employeeId || '').trim();
+      const personName = String(record.personName || '').trim();
+      if (employeeId || personName) return `${employeeId}|${personName}`;
+      return `${record.branch || ''}|${record.organization || ''}|${record.sourceRow || ''}`;
+    })
   );
   return keys.size;
+}
+
+function countUniqueContractors(records) {
+  return new Set(
+    records
+      .map((record) => String(record.contractorName || '').trim())
+      .filter(Boolean)
+  ).size;
 }
 
 function groupBy(records, field) {

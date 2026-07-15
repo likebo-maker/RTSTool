@@ -138,16 +138,24 @@
           search-placeholder="搜索分公司"
         />
         <QualificationFilterSelect
+          v-model="draftFilters.contractors"
+          label="渠道商"
+          :options="contractorFilterOptions"
+          preserve-external-values
+          searchable
+          search-placeholder="搜索渠道商"
+        />
+        <QualificationFilterSelect
           v-model="draftFilters.productLines"
           label="产品线"
-          :options="filterOptions.productLines"
+          :options="productLineFilterOptions"
           searchable
           search-placeholder="搜索产品线"
         />
         <QualificationFilterSelect
           v-model="draftFilters.machineModels"
           label="机器型号"
-          :options="filterOptions.machineModels"
+          :options="machineModelFilterOptions"
           searchable
           search-placeholder="输入型号关键字"
         />
@@ -158,13 +166,6 @@
           searchable
           search-placeholder="搜索资质类型"
         />
-
-        <label class="qualification-status-select">
-          <span class="qualification-filter-label">资质状态</span>
-          <select v-model="draftFilters.status">
-            <option v-for="status in filterOptions.statusOptions" :key="status" :value="status">{{ status }}</option>
-          </select>
-        </label>
 
         <div class="qualification-filter-actions">
           <button class="primary-button" type="button" :disabled="interactionDisabled" @click="applyFilters">
@@ -178,9 +179,9 @@
         </div>
       </div>
 
-      <div v-if="importWarnings.length" class="qualification-warning-list">
+      <div v-if="warningMessage" class="qualification-warning-list">
         <AlertTriangle :size="16" />
-        <span>{{ importWarnings[0] }}</span>
+        <span>{{ warningMessage }}</span>
       </div>
     </section>
 
@@ -202,8 +203,8 @@
         </section>
         <QualificationAmap
           :points="dashboard.mapPoints"
-          :loading="loading"
-          :active="props.active"
+          :loading="loading || viewBusy"
+          :active="visualsActive"
           :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen"
           :selected-branch="fullscreenActive ? focusedBranch : selectedBranch"
           :presentation-mode="fullscreenActive && presentationCarouselEnabled"
@@ -270,49 +271,14 @@
               </div>
             </div>
 
-            <div v-else-if="activeSideTab === 'risk'" class="qualification-tab-panel">
-              <div class="qualification-tab-caption">
-                <span>资质风险 TOP10</span>
-                <strong>{{ dashboard.topRiskBranches.length }}</strong>
-              </div>
-              <div v-if="dashboard.topRiskBranches.length" class="qualification-expandable-block">
-                <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.risk || fullscreenActive }">
-                  <button
-                    v-for="(item, index) in displayedRiskBranches"
-                    :key="`${item.branch}-risk`"
-                    class="qualification-risk-row"
-                    :class="{ focused: activeSideTab === 'risk' && index === sideAnalysisIndex }"
-                    :data-branch="item.branch"
-                    type="button"
-                    @click="openBranchDetail(item.branch)"
-                  >
-                    <span class="rank-index">{{ index + 1 }}</span>
-                    <div class="rank-branch-copy">
-                      <strong>{{ item.branch }}</strong>
-                      <span>30天内到期 {{ item.expiring30 }} / 已过期 {{ item.expiredQualifications }}</span>
-                    </div>
-                  </button>
-                </div>
-                <button v-if="!fullscreenActive && dashboard.topRiskBranches.length > TOP_LIST_LIMIT" class="qualification-expand-button" type="button" @click="toggleSidePanel('risk')">
-                  <ChevronUp v-if="expandedSidePanels.risk" :size="16" />
-                  <ChevronDown v-else :size="16" />
-                  <span>{{ expandedSidePanels.risk ? '收起，仅显示TOP10' : `展开全部 ${dashboard.topRiskBranches.length}项` }}</span>
-                </button>
-              </div>
-              <div v-else class="chart-empty-state compact in-tab">
-                <ShieldAlert :size="20" />
-                <span>{{ emptyStateText }}</span>
-              </div>
-            </div>
-
             <div v-else-if="activeSideTab === 'productLine'" class="qualification-tab-panel analysis single">
               <div class="qualification-expandable-chart" :class="{ expanded: expandedSidePanels.productLine }">
                 <EChartPanel
                   title="产品线资质分布"
                   kicker="Product Line"
                   :option="productLineBarOption"
-                  :loading="loading"
-                  :active="props.active"
+                  :loading="loading || viewBusy"
+                  :active="visualsActive"
                   :height="productLineChartHeight"
                   :highlight-index="activeSideTab === 'productLine' ? sideChartHighlightIndex : -1"
                   :empty-text="emptyStateText"
@@ -332,8 +298,8 @@
                   title="资质类型分布"
                   kicker="Qualification Type"
                   :option="qualificationTypeBarOption"
-                  :loading="loading"
-                  :active="props.active"
+                  :loading="loading || viewBusy"
+                  :active="visualsActive"
                   :height="qualificationTypeChartHeight"
                   :highlight-index="activeSideTab === 'qualificationType' ? sideChartHighlightIndex : -1"
                   :empty-text="'暂无资质类型分布数据'"
@@ -352,8 +318,8 @@
                 title="到期趋势分析"
                 kicker="Expiry Analysis"
                 :option="expiryTrendOption"
-                :loading="loading"
-                :active="props.active"
+                :loading="loading || viewBusy"
+                :active="visualsActive"
                 height="248px"
                 :highlight-index="activeSideTab === 'expiryTrend' ? sideChartHighlightIndex : -1"
                 :empty-text="'暂无到期风险数据'"
@@ -367,8 +333,8 @@
                   title="产品线资质分布"
                   kicker="Product Line"
                   :option="productLineBarOption"
-                  :loading="loading"
-                  :active="props.active"
+                  :loading="loading || viewBusy"
+                  :active="visualsActive"
                   :height="productLineChartHeight"
                   :empty-text="emptyStateText"
                   panelless
@@ -385,8 +351,8 @@
                     title="资质类型分布"
                     kicker="Qualification Type"
                     :option="qualificationTypeBarOption"
-                    :loading="loading"
-                    :active="props.active"
+                    :loading="loading || viewBusy"
+                    :active="visualsActive"
                     :height="qualificationTypeChartHeight"
                     :empty-text="'暂无资质类型分布数据'"
                     panelless
@@ -401,8 +367,8 @@
                   title="到期趋势分析"
                   kicker="Expiry Analysis"
                   :option="expiryTrendOption"
-                  :loading="loading"
-                  :active="props.active"
+                  :loading="loading || viewBusy"
+                  :active="visualsActive"
                   height="212px"
                   :empty-text="'暂无到期风险数据'"
                   panelless
@@ -422,9 +388,23 @@
               <p class="section-kicker">Branch Detail</p>
               <h2>{{ branchDetail.branchStat.branch }}资质详情</h2>
             </div>
-            <button class="icon-button" type="button" @click="closeBranchDetail">
-              <X :size="18" />
-            </button>
+            <div class="qualification-drawer-actions">
+              <button
+                class="ghost-button"
+                :class="{ locked: !canExportExcel }"
+                type="button"
+                :disabled="Boolean(activeExportKey) || (canExportExcel && !filteredBranchRows.length)"
+                :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+                @click="exportBranchDetail"
+              >
+                <LoaderCircle v-if="activeExportKey === 'branch'" class="spin" :size="17" />
+                <Download v-else :size="17" />
+                <span>导出当前分公司明细</span>
+              </button>
+              <button class="icon-button" type="button" @click="closeBranchDetail">
+                <X :size="18" />
+              </button>
+            </div>
           </div>
 
           <div class="qualification-drawer-metrics">
@@ -440,7 +420,7 @@
               title="产品线分布"
               kicker="Branch Product Line"
               :option="branchProductLineOption"
-              :active="props.active"
+              :active="visualsActive"
               height="220px"
               :empty-text="'暂无产品线分布数据'"
             />
@@ -448,7 +428,7 @@
               title="资质类型分布"
               kicker="Branch Type Mix"
               :option="branchTypeOption"
-              :active="props.active"
+              :active="visualsActive"
               height="220px"
               :empty-text="'暂无资质类型分布数据'"
             />
@@ -456,74 +436,12 @@
               title="到期风险分布"
               kicker="Branch Risk"
               :option="branchRiskOption"
-              :active="props.active"
+              :active="visualsActive"
               height="220px"
               :empty-text="'暂无风险分布数据'"
             />
           </div>
 
-          <section class="glass-panel qualification-drawer-filter">
-            <div class="panel-title-row">
-              <div>
-                <p class="section-kicker">Detail Filter</p>
-                <h2>人员资质明细</h2>
-              </div>
-              <button
-                class="ghost-button"
-                :class="{ locked: !canExportExcel }"
-                type="button"
-                :disabled="Boolean(activeExportKey) || (canExportExcel && !filteredBranchRows.length)"
-                :title="!canExportExcel ? '当前授权未开放该功能' : ''"
-                @click="exportBranchDetail"
-              >
-                <LoaderCircle v-if="activeExportKey === 'branch'" class="spin" :size="17" />
-                <Download v-else :size="17" />
-                <span>导出当前分公司明细</span>
-              </button>
-            </div>
-
-            <div class="qualification-drawer-filter-row">
-              <input v-model.trim="detailKeyword" class="qualification-filter-search" type="text" placeholder="搜索姓名" />
-              <select v-model="detailStatus">
-                <option v-for="status in filterOptions.statusOptions" :key="`detail-${status}`" :value="status">{{ status }}</option>
-              </select>
-            </div>
-
-            <div v-if="filteredBranchRows.length" class="table-shell qualification-table-shell">
-              <table>
-                <thead>
-                  <tr>
-                    <th>姓名</th>
-                    <th>分公司</th>
-                    <th>产品线</th>
-                    <th>机器型号</th>
-                    <th>服务资质类型</th>
-                    <th>资质有效期</th>
-                    <th>资质状态</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in filteredBranchRows" :key="row.id">
-                    <td>{{ row.personName }}</td>
-                    <td>{{ row.branch }}</td>
-                    <td>{{ row.productLine }}</td>
-                    <td>{{ row.machineModel }}</td>
-                    <td>{{ row.qualificationType }}</td>
-                    <td>{{ row.expiryDate }}</td>
-                    <td>
-                      <span class="qualification-status-badge" :class="statusClass(row.qualificationStatus)">
-                        {{ row.qualificationStatus }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div v-else class="empty-preview">
-              <TableProperties :size="24" />
-              <span>暂无符合条件的分公司资质明细</span>
-            </div>
-          </section>
         </aside>
       </div>
     </Transition>
@@ -574,9 +492,7 @@ import {
   Play,
   RotateCcw,
   Search,
-  ShieldAlert,
   ShieldCheck,
-  TableProperties,
   Upload,
   Users,
   WalletCards,
@@ -588,13 +504,13 @@ import QualificationAmap from '../components/QualificationAmap.vue';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
 import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
-import { appendGeoSummaryWarning, batchResolveGeo, loadGeoCache, normalizeGeoMap, normalizeLocationList } from '../services/geoCacheService';
 import {
   buildBranchDetail,
   buildQualificationDashboard,
   collectQualificationOptions,
   DEFAULT_QUALIFICATION_FILTERS
 } from '../utils/qualificationAggregator';
+import { NO_CONTRACTOR_LABEL } from '../utils/qualificationBranchResolver';
 import { exportBranchQualificationRecords, exportQualificationRecords } from '../utils/qualificationExport';
 import { parseQualificationFiles } from '../utils/qualificationParser';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
@@ -621,14 +537,15 @@ const CHART_TOP_LIMIT = 10;
 const MAP_CAROUSEL_INTERVAL_MS = 5000;
 const SIDE_ITEM_INTERVAL_MS = 4000;
 const AUTO_RESUME_DELAY_MS = 30000;
+const REACTIVATION_IDLE_TIMEOUT_MS = 360;
 const pageRef = ref(null);
 const fileInputRef = ref(null);
 const loading = ref(false);
 const restoringView = ref(false);
 const reactivatingView = ref(false);
 const importedRecords = shallowRef([]);
-const geoCacheMap = shallowRef({});
 const importWarnings = ref([]);
+const filterValidationMessage = ref('');
 const selectedBranch = ref('');
 const detailKeyword = ref('');
 const detailStatus = ref('全部');
@@ -645,9 +562,9 @@ let mapCarouselTimerId = null;
 let sideAnalysisTimerId = null;
 let autoResumeTimerId = null;
 let fullscreenControlsHideTimerId = null;
+let reactivationToken = 0;
 const expandedSidePanels = reactive({
   branch: false,
-  risk: false,
   productLine: false,
   qualificationType: false
 });
@@ -673,16 +590,66 @@ const filterOptions = computed(() => {
     statusOptions: options.statusOptions || ['全部', '有效', '30天内到期', '60天内到期', '90天内到期', '已过期']
   };
 });
+const branchRegionMap = computed(() => {
+  const result = new Map();
+  importedRecords.value.forEach((record) => {
+    if (record.branch && !result.has(record.branch)) {
+      result.set(record.branch, record.mappedRegion || '');
+    }
+  });
+  return result;
+});
 const branchFilterOptions = computed(() => {
   if (!draftFilters.regions.length) return filterOptions.value.branches;
   const selectedRegionSet = new Set(draftFilters.regions);
-  return filterOptions.value.branches.filter((branch) => {
-    const matchedRecord = importedRecords.value.find((record) => record.branch === branch);
-    return selectedRegionSet.has(matchedRecord?.mappedRegion || '');
-  });
+  return filterOptions.value.branches.filter((branch) => selectedRegionSet.has(branchRegionMap.value.get(branch) || ''));
 });
+const contractorFilterOptions = computed(() => {
+  const selectedRegionSet = new Set(draftFilters.regions);
+  const selectedBranchSet = new Set(draftFilters.branches);
+  const contractors = new Set();
+  importedRecords.value.forEach((record) => {
+    if (selectedRegionSet.size && !selectedRegionSet.has(record.mappedRegion || '')) return;
+    if (selectedBranchSet.size && !selectedBranchSet.has(record.branch || '')) return;
+    if (!record.isChannelPartner) return;
+    if (record.contractorFilterValue && record.contractorFilterValue !== NO_CONTRACTOR_LABEL) {
+      contractors.add(record.contractorFilterValue);
+    }
+  });
+  return [...contractors].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+});
+const productLineFilterOptions = computed(() => collectDraftScopedOptions('productLine', {
+  regions: true,
+  branches: true,
+  contractors: true
+}));
+const machineModelFilterOptions = computed(() => collectDraftScopedOptions('machineModel', {
+  regions: true,
+  branches: true,
+  contractors: true,
+  productLines: true
+}));
 
-const dashboard = computed(() => buildQualificationDashboard(importedRecords.value, appliedFilters.value, geoCacheMap.value));
+function collectDraftScopedOptions(field, scopes = {}) {
+  const selectedRegionSet = new Set(draftFilters.regions);
+  const selectedBranchSet = new Set(draftFilters.branches);
+  const selectedContractorSet = new Set(draftFilters.contractors);
+  const selectedProductLineSet = new Set(draftFilters.productLines);
+  const values = new Set();
+
+  importedRecords.value.forEach((record) => {
+    if (scopes.regions && selectedRegionSet.size && !selectedRegionSet.has(record.mappedRegion || '')) return;
+    if (scopes.branches && selectedBranchSet.size && !selectedBranchSet.has(record.branch || '')) return;
+    if (scopes.contractors && selectedContractorSet.size && !selectedContractorSet.has(record.contractorFilterValue || '')) return;
+    if (scopes.productLines && selectedProductLineSet.size && !selectedProductLineSet.has(record.productLine || '')) return;
+    const value = record[field];
+    if (value) values.add(value);
+  });
+
+  return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+}
+
+const dashboard = computed(() => buildQualificationDashboard(importedRecords.value, appliedFilters.value));
 const hasData = computed(() => Boolean(importedRecords.value.length));
 const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的资质数据，请调整筛选条件。' : '请导入资质表'));
 const interactionDisabled = computed(() => loading.value || importOverlay.visible);
@@ -691,6 +658,8 @@ const dataStatusText = computed(() => {
   return `已导入 ${importedRecords.value.length.toLocaleString()} 条资质记录`;
 });
 const viewBusy = computed(() => restoringView.value || reactivatingView.value);
+const visualsActive = computed(() => props.active && !viewBusy.value);
+const warningMessage = computed(() => filterValidationMessage.value || importWarnings.value[0] || '');
 const viewBusyMessage = computed(() => (
   restoringView.value
     ? '正在恢复上次资质地图数据，请稍候...'
@@ -698,12 +667,10 @@ const viewBusyMessage = computed(() => (
 ));
 const regularSideTabs = [
   { key: 'branch', label: '分公司TOP10' },
-  { key: 'risk', label: '风险TOP10' },
   { key: 'analysis', label: '产品线分布' }
 ];
 const fullscreenSideTabs = [
   { key: 'branch', label: '公司TOP10' },
-  { key: 'risk', label: '风险TOP10' },
   { key: 'productLine', label: '产品线分布' },
   { key: 'qualificationType', label: '资质类型分布' },
   { key: 'expiryTrend', label: '到期趋势分析' }
@@ -711,17 +678,16 @@ const fullscreenSideTabs = [
 const visibleSideTabs = computed(() => (props.fullscreenActive ? fullscreenSideTabs : regularSideTabs));
 
 const metricCards = computed(() => [
+  { key: 'totalPeople', label: '总持证人数', value: dashboard.value.summary.totalPeople, icon: Users, tone: 'blue' },
   { key: 'validQualifications', label: '有效资质总数', value: dashboard.value.summary.validQualifications, icon: ShieldCheck, tone: 'cyan' },
-  { key: 'expiringSoon', label: '即将到期资质', value: dashboard.value.summary.expiringSoon, icon: CalendarClock, tone: 'orange' },
-  { key: 'expiredQualifications', label: '已过期资质', value: dashboard.value.summary.expiredQualifications, icon: CircleX, tone: 'red' },
-  { key: 'coveredBranches', label: '覆盖分公司数', value: dashboard.value.summary.coveredBranches, icon: WalletCards, tone: 'green' }
+  { key: 'coveredBranches', label: '覆盖分公司数', value: dashboard.value.summary.coveredBranches, icon: WalletCards, tone: 'green' },
+  { key: 'coveredContractors', label: '覆盖渠道商', value: dashboard.value.summary.coveredContractors, icon: WalletCards, tone: 'orange' }
 ]);
 const fullscreenMetricCards = computed(() => [
   { key: 'validQualifications', label: '有效资质', value: dashboard.value.summary.validQualifications, tone: 'cyan' },
   { key: 'totalPeople', label: '持证人数', value: dashboard.value.summary.totalPeople, tone: 'blue' },
   { key: 'coveredBranches', label: '覆盖分公司', value: dashboard.value.summary.coveredBranches, tone: 'green' },
-  { key: 'expiringSoon', label: '即将到期', value: dashboard.value.summary.expiringSoon, tone: 'orange' },
-  { key: 'expiredQualifications', label: '已过期', value: dashboard.value.summary.expiredQualifications, tone: 'red' }
+  { key: 'coveredContractors', label: '覆盖渠道商', value: dashboard.value.summary.coveredContractors, tone: 'orange' }
 ]);
 
 const branchDetail = computed(() => {
@@ -761,9 +727,6 @@ const branchRiskOption = computed(() => buildTrendOption(branchDetail.value.expi
 const displayedValidBranches = computed(() => (props.fullscreenActive
   ? dashboard.value.topValidBranches
   : getVisibleRows(dashboard.value.topValidBranches, expandedSidePanels.branch, TOP_LIST_LIMIT)));
-const displayedRiskBranches = computed(() => (props.fullscreenActive
-  ? dashboard.value.topRiskBranches
-  : getVisibleRows(dashboard.value.topRiskBranches, expandedSidePanels.risk, TOP_LIST_LIMIT)));
 const productLineChartRows = computed(() => getDistributionRows(dashboard.value.productLineDistribution, expandedSidePanels.productLine, CHART_TOP_LIMIT));
 const qualificationTypeChartRows = computed(() => getDistributionRows(dashboard.value.qualificationTypeDistribution, expandedSidePanels.qualificationType, CHART_TOP_LIMIT));
 const expiryTrendRows = computed(() => (dashboard.value.expiryTrend || [])
@@ -777,14 +740,13 @@ const permanentLabelBranches = computed(() => {
 });
 const activeSideRows = computed(() => {
   if (activeSideTab.value === 'branch') return displayedValidBranches.value;
-  if (activeSideTab.value === 'risk') return displayedRiskBranches.value;
   if (activeSideTab.value === 'productLine') return productLineChartRows.value;
   if (activeSideTab.value === 'qualificationType') return qualificationTypeChartRows.value;
   if (activeSideTab.value === 'expiryTrend') return expiryTrendRows.value;
   return [];
 });
 const activeSideBranch = computed(() => {
-  if (!['branch', 'risk'].includes(activeSideTab.value)) return '';
+  if (activeSideTab.value !== 'branch') return '';
   return activeSideRows.value[sideAnalysisIndex.value]?.branch || '';
 });
 const sideChartHighlightIndex = computed(() => {
@@ -807,8 +769,6 @@ const carouselSequence = computed(() => {
 
   const result = [];
   addUniquePoints(result, dashboard.value.topValidBranches.slice(0, 10));
-  const riskItems = dashboard.value.topRiskBranches.filter((item) => isRiskPoint(item)).slice(0, 10);
-  addUniquePoints(result, riskItems);
   addUniquePoints(result, dashboard.value.mapPoints);
   return result;
 });
@@ -822,28 +782,34 @@ watchEffect(() => {
     emit('status-change', '资质地图数据处理中');
     return;
   }
+  if (viewBusy.value) {
+    emit('status-change', viewBusyMessage.value);
+    return;
+  }
   emit('status-change', hasData.value ? `资质地图就绪，当前 ${dashboard.value.filteredRecords.length} 条` : '中国区人员服务资质地图待导入数据');
 });
 
 watch(
   () => props.active,
   async (isActive, wasActive) => {
-    if (!isActive || wasActive !== false) return;
+    if (!isActive) {
+      reactivationToken += 1;
+      reactivatingView.value = false;
+      return;
+    }
+    if (wasActive !== false) return;
     if (!hasData.value) {
       await loadLastDataset();
       return;
     }
-    reactivatingView.value = true;
-    await nextTick();
-    window.setTimeout(() => {
-      reactivatingView.value = false;
-    }, 260);
+    await deferViewReactivation();
   }
 );
 
 onMounted(loadLastDataset);
 
 onBeforeUnmount(() => {
+  reactivationToken += 1;
   stopAutoAnalysisTimers();
   clearAutoResumeTimer();
   clearFullscreenControlsTimer();
@@ -917,6 +883,16 @@ watch(
       sideAnalysisIndex.value = rowCount - 1;
     }
   }
+);
+
+watch(
+  draftFilters,
+  () => {
+    if (filterValidationMessage.value) {
+      filterValidationMessage.value = '';
+    }
+  },
+  { deep: true }
 );
 
 function openImporter() {
@@ -1097,6 +1073,7 @@ async function handleFileImport(event) {
 
   loading.value = true;
   importWarnings.value = [];
+  filterValidationMessage.value = '';
   selectedBranch.value = '';
   prepareImportOverlay();
 
@@ -1105,28 +1082,21 @@ async function handleFileImport(event) {
     const payload = await parseQualificationFiles(files, {
       onProgress: handleImportProgress
     });
-    updateImportOverlayStep('generate', 'processing', 88, '正在解析地图坐标缓存...');
-    const geoResult = await batchResolveGeo(
-      normalizeLocationList((payload.records || []).map((record) => record.geoLocationName || record.branch)),
-      { allowGeocode: true }
-    );
-    geoCacheMap.value = geoResult.items;
-    updateImportOverlayStep('generate', 'processing', 94, '正在生成分公司地图点位...');
+    updateImportOverlayStep('generate', 'processing', 94, '正在生成离线地图点位...');
     importedRecords.value = markRaw(payload.records || []);
-    importWarnings.value = appendGeoSummaryWarning(payload.warnings || [], geoResult.summary);
+    importWarnings.value = payload.warnings || [];
     const allFilters = createAllFiltersFromOptions();
     Object.assign(draftFilters, allFilters);
     appliedFilters.value = cloneFilters(allFilters);
     resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP, {
       records: importedRecords.value,
-      warnings: importWarnings.value,
-      geoMap: geoCacheMap.value
+      warnings: importWarnings.value
     });
     await nextTick();
     updateImportOverlayStep('generate', 'completed', 100, '导入完成');
     importOverlay.mode = 'success';
-    emit('log', `资质数据导入完成，共识别 ${payload.records.length} 条记录；坐标缓存命中 ${geoResult.summary.cache_hit} 个，新增解析 ${geoResult.summary.amap_resolved} 个`);
+    emit('log', `资质数据导入完成，共识别 ${payload.records.length} 条记录；地图使用离线分公司坐标`);
     window.setTimeout(() => {
       loading.value = false;
       resetImportOverlay();
@@ -1142,9 +1112,17 @@ async function handleFileImport(event) {
 }
 
 function applyFilters() {
+  const validation = validateDraftFilters();
+  if (!validation.valid) {
+    filterValidationMessage.value = validation.message;
+    emit('log', validation.message);
+    return;
+  }
+  filterValidationMessage.value = '';
   appliedFilters.value = {
     regions: [...draftFilters.regions],
     branches: [...draftFilters.branches],
+    contractors: [...draftFilters.contractors],
     productLines: [...draftFilters.productLines],
     machineModels: [...draftFilters.machineModels],
     qualificationTypes: [...draftFilters.qualificationTypes],
@@ -1159,6 +1137,7 @@ function applyFilters() {
 }
 
 function resetFilters() {
+  filterValidationMessage.value = '';
   const allFilters = createAllFiltersFromOptions();
   Object.assign(draftFilters, allFilters);
   appliedFilters.value = cloneFilters(allFilters);
@@ -1254,20 +1233,11 @@ async function exportBranchDetail() {
   );
 }
 
-function statusClass(status) {
-  if (status === '已过期') return 'critical';
-  if (status === '有效') return 'good';
-  return 'warning';
-}
-
-function isRiskPoint(point) {
-  return Boolean(point?.expiredQualifications > 0 || point?.expiring30 > 0 || point?.riskLevel === '高风险' || point?.riskLevel === '关注');
-}
-
 function createDefaultFilters() {
   return {
     regions: [],
     branches: [],
+    contractors: [],
     productLines: [],
     machineModels: [],
     qualificationTypes: [],
@@ -1275,11 +1245,56 @@ function createDefaultFilters() {
   };
 }
 
+function validateDraftFilters() {
+  if (!hasData.value) {
+    return { valid: false, message: '请先导入资质表后再查询。' };
+  }
+
+  const rules = [
+    { key: 'regions', label: '大区', options: filterOptions.value.regions },
+    { key: 'branches', label: '分公司', options: branchFilterOptions.value },
+    { key: 'contractors', label: '渠道商', options: contractorFilterOptions.value },
+    { key: 'productLines', label: '产品线', options: productLineFilterOptions.value },
+    { key: 'machineModels', label: '机器型号', options: machineModelFilterOptions.value },
+    { key: 'qualificationTypes', label: '服务资质类型', options: filterOptions.value.qualificationTypes }
+  ];
+  const missingLabels = [];
+  const emptyOptionLabels = [];
+
+  rules.forEach(({ key, label, options }) => {
+    const optionList = options || [];
+    if (!optionList.length) {
+      emptyOptionLabels.push(label);
+      return;
+    }
+    const optionSet = new Set(optionList);
+    const selectedVisibleCount = (draftFilters[key] || []).filter((value) => optionSet.has(value)).length;
+    if (!selectedVisibleCount) {
+      missingLabels.push(label);
+    }
+  });
+
+  if (emptyOptionLabels.length) {
+    return {
+      valid: false,
+      message: `当前筛选条件下「${emptyOptionLabels.join('、')}」暂无可选项，请先调整上级筛选条件。`
+    };
+  }
+  if (missingLabels.length) {
+    return {
+      valid: false,
+      message: `请选择：${missingLabels.join('、')}。`
+    };
+  }
+  return { valid: true, message: '' };
+}
+
 function createAllFiltersFromOptions() {
   const options = filterOptions.value;
   return {
     regions: [...options.regions],
     branches: [...options.branches],
+    contractors: [...options.contractors, NO_CONTRACTOR_LABEL],
     productLines: [...options.productLines],
     machineModels: [...options.machineModels],
     qualificationTypes: [...options.qualificationTypes],
@@ -1291,6 +1306,7 @@ function cloneFilters(filters) {
   return {
     regions: [...filters.regions],
     branches: [...filters.branches],
+    contractors: [...(filters.contractors || [])],
     productLines: [...filters.productLines],
     machineModels: [...filters.machineModels],
     qualificationTypes: [...filters.qualificationTypes],
@@ -1639,7 +1655,6 @@ async function loadLastDataset() {
     return;
   }
   importedRecords.value = markRaw(payload.records || []);
-  geoCacheMap.value = payload.geoMap ? normalizeGeoMap(payload.geoMap) : await loadGeoCache();
   importWarnings.value = payload.warnings || [];
   const allFilters = createAllFiltersFromOptions();
   Object.assign(draftFilters, allFilters);
@@ -1655,10 +1670,31 @@ async function loadLastDataset() {
   emit('log', `已加载上次资质地图数据，共 ${importedRecords.value.length} 条`);
 }
 
+async function deferViewReactivation() {
+  const token = reactivationToken + 1;
+  reactivationToken = token;
+  reactivatingView.value = true;
+  await waitForPaint();
+  await waitForBrowserIdle(REACTIVATION_IDLE_TIMEOUT_MS);
+  if (token === reactivationToken) {
+    reactivatingView.value = false;
+  }
+}
+
 async function waitForPaint() {
   await nextTick();
   await new Promise((resolve) => {
     window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function waitForBrowserIdle(timeout = REACTIVATION_IDLE_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(() => resolve(), { timeout });
+      return;
+    }
+    window.setTimeout(resolve, timeout);
   });
 }
 </script>

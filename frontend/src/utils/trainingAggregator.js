@@ -39,7 +39,8 @@ export function applyTrainingFilters(records, filters = DEFAULT_TRAINING_FILTERS
 
 function matchesMultiSelect(value, selectedValues) {
   if (!Array.isArray(selectedValues)) return true;
-  return selectedValues.length > 0 && selectedValues.includes(value);
+  if (!selectedValues.length) return false;
+  return selectedValues.includes(value);
 }
 
 export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTERS, geoMap = {}) {

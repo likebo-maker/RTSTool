@@ -3638,6 +3638,14 @@ tr:hover td {
   margin-bottom: 16px;
 }
 
+.qualification-drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .qualification-drawer-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

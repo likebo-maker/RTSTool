@@ -85,17 +85,7 @@
           @status-change="handleStatusChange"
           @log="appendLog"
         />
-        <ServiceQualificationMap
-          v-else-if="activeTool === 'service-qualification-map'"
-          :active="activeTool === 'service-qualification-map'"
-          :can-export-excel="canExportExcel"
-          :fullscreen-active="isBrowserFullscreen && activeTool === 'service-qualification-map'"
-          @enter-fullscreen="enterBrowserFullscreen"
-          @exit-fullscreen="exitBrowserFullscreen"
-          @feature-blocked="showUnauthorizedFeature"
-          @status-change="handleStatusChange"
-          @log="appendLog"
-        />
+        <div v-else-if="activeTool === 'service-qualification-map'" class="cached-tool-placeholder"></div>
         <TrainingCoverageMap
           v-else-if="activeTool === 'training-coverage-map'"
           :can-export-excel="canExportExcel"
@@ -116,6 +106,18 @@
           v-else
           :tool-key="activeTool"
           @status-change="handleStatusChange"
+        />
+        <ServiceQualificationMap
+          v-if="serviceQualificationMapMounted"
+          v-show="!routeBlocked && activeTool === 'service-qualification-map'"
+          :active="!routeBlocked && activeTool === 'service-qualification-map'"
+          :can-export-excel="canExportExcel"
+          :fullscreen-active="isBrowserFullscreen && activeTool === 'service-qualification-map'"
+          @enter-fullscreen="enterBrowserFullscreen"
+          @exit-fullscreen="exitBrowserFullscreen"
+          @feature-blocked="showUnauthorizedFeature"
+          @status-change="handleStatusChange"
+          @log="appendLog"
         />
       </main>
 
@@ -182,6 +184,7 @@ const DISCLAIMER_VERSION = '1.0';
 
 const sidebarCollapsed = ref(false);
 const activeTool = ref('home');
+const serviceQualificationMapMounted = ref(false);
 const runtimeStatus = ref('系统就绪');
 const logs = ref(['平台初始化完成，等待工具操作']);
 const isAuthenticated = ref(false);
@@ -219,6 +222,9 @@ onBeforeUnmount(() => {
 watch(
   activeTool,
   (toolKey) => {
+    if (toolKey === 'service-qualification-map') {
+      serviceQualificationMapMounted.value = true;
+    }
     if (isBrowserFullscreen.value && !fullscreenToolKeys.has(toolKey)) {
       exitBrowserFullscreen();
     }

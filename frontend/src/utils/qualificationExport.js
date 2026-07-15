@@ -2,8 +2,10 @@ import * as XLSX from 'xlsx';
 
 export function exportQualificationRecords(records, fileName = '中国区人员服务资质筛选结果.xlsx') {
   const rows = records.map((record) => ({
+    人工编号: record.employeeId,
     姓名: record.personName,
     分公司: record.branch,
+    渠道商: record.contractorName,
     区域: record.region,
     产品线: record.productLine,
     机器型号: record.machineModel,
