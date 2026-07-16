@@ -16,7 +16,7 @@ export const FEATURE_LABELS = {
   [FEATURES.ONLINE_SERVICE_TARGET]: '在线服务项目目标',
   [FEATURES.ONLINE_SERVICE_KPI]: '在线服务考核指标',
   [FEATURES.QUALIFICATION_MAP]: '中国区人员服务资质地图',
-  [FEATURES.TRAINING_MAP]: '中国区培训覆盖地图',
+  [FEATURES.TRAINING_MAP]: '中国区培训中心建设/交付地图',
   [FEATURES.ELEARNING_DATA]: 'E课堂数据处理',
   [FEATURES.EXPORT_EXCEL]: 'Excel导出',
   [FEATURES.EXPORT_PDF]: 'PDF导出',
@@ -41,7 +41,7 @@ export const TOOL_LABELS = {
   'online-business-calculation': '在线服务项目目标',
   'online-service-assessment': '在线服务考核指标',
   'service-qualification-map': '中国区人员服务资质地图',
-  'training-coverage-map': '中国区培训覆盖地图',
+  'training-coverage-map': '中国区培训中心建设/交付地图',
   'eclass-data': 'E课堂数据处理'
 };
 

@@ -126,7 +126,8 @@
         <QualificationFilterSelect
           v-model="draftFilters.regions"
           label="大区"
-          :options="filterOptions.regions"
+          :options="regionFilterOptions"
+          preserve-external-values
           searchable
           search-placeholder="搜索大区"
         />
@@ -134,6 +135,7 @@
           v-model="draftFilters.branches"
           label="分公司"
           :options="branchFilterOptions"
+          preserve-external-values
           searchable
           search-placeholder="搜索分公司"
         />
@@ -149,6 +151,7 @@
           v-model="draftFilters.productLines"
           label="产品线"
           :options="productLineFilterOptions"
+          preserve-external-values
           searchable
           search-placeholder="搜索产品线"
         />
@@ -156,13 +159,15 @@
           v-model="draftFilters.machineModels"
           label="机器型号"
           :options="machineModelFilterOptions"
+          preserve-external-values
           searchable
           search-placeholder="输入型号关键字"
         />
         <QualificationFilterSelect
           v-model="draftFilters.qualificationTypes"
           label="服务资质类型"
-          :options="filterOptions.qualificationTypes"
+          :options="qualificationTypeFilterOptions"
+          preserve-external-values
           searchable
           search-placeholder="搜索资质类型"
         />
@@ -582,6 +587,16 @@ function toggleBrowserFullscreen() {
 
 const draftFilters = reactive(createDefaultFilters());
 const appliedFilters = ref(createDefaultFilters());
+const dashboardState = shallowRef(markRaw(buildQualificationDashboard([], appliedFilters.value)));
+const DYNAMIC_FILTER_FIELDS = {
+  regions: 'mappedRegion',
+  branches: 'branch',
+  contractors: 'contractorFilterValue',
+  productLines: 'productLine',
+  machineModels: 'machineModel',
+  qualificationTypes: 'qualificationType'
+};
+const DYNAMIC_FILTER_KEYS = Object.keys(DYNAMIC_FILTER_FIELDS);
 
 const filterOptions = computed(() => {
   const options = collectQualificationOptions(importedRecords.value);
@@ -590,66 +605,73 @@ const filterOptions = computed(() => {
     statusOptions: options.statusOptions || ['全部', '有效', '30天内到期', '60天内到期', '90天内到期', '已过期']
   };
 });
-const branchRegionMap = computed(() => {
-  const result = new Map();
-  importedRecords.value.forEach((record) => {
-    if (record.branch && !result.has(record.branch)) {
-      result.set(record.branch, record.mappedRegion || '');
-    }
-  });
-  return result;
-});
-const branchFilterOptions = computed(() => {
-  if (!draftFilters.regions.length) return filterOptions.value.branches;
-  const selectedRegionSet = new Set(draftFilters.regions);
-  return filterOptions.value.branches.filter((branch) => selectedRegionSet.has(branchRegionMap.value.get(branch) || ''));
-});
-const contractorFilterOptions = computed(() => {
-  const selectedRegionSet = new Set(draftFilters.regions);
-  const selectedBranchSet = new Set(draftFilters.branches);
-  const contractors = new Set();
-  importedRecords.value.forEach((record) => {
-    if (selectedRegionSet.size && !selectedRegionSet.has(record.mappedRegion || '')) return;
-    if (selectedBranchSet.size && !selectedBranchSet.has(record.branch || '')) return;
-    if (!record.isChannelPartner) return;
-    if (record.contractorFilterValue && record.contractorFilterValue !== NO_CONTRACTOR_LABEL) {
-      contractors.add(record.contractorFilterValue);
-    }
-  });
-  return [...contractors].sort((left, right) => left.localeCompare(right, 'zh-CN'));
-});
-const productLineFilterOptions = computed(() => collectDraftScopedOptions('productLine', {
-  regions: true,
-  branches: true,
-  contractors: true
-}));
-const machineModelFilterOptions = computed(() => collectDraftScopedOptions('machineModel', {
-  regions: true,
-  branches: true,
-  contractors: true,
-  productLines: true
-}));
+const dynamicFilterOptions = computed(() => buildDynamicFilterOptions(importedRecords.value, draftFilters, filterOptions.value));
+const regionFilterOptions = computed(() => dynamicFilterOptions.value.regions);
+const branchFilterOptions = computed(() => dynamicFilterOptions.value.branches);
+const contractorFilterOptions = computed(() => dynamicFilterOptions.value.contractors);
+const productLineFilterOptions = computed(() => dynamicFilterOptions.value.productLines);
+const machineModelFilterOptions = computed(() => dynamicFilterOptions.value.machineModels);
+const qualificationTypeFilterOptions = computed(() => dynamicFilterOptions.value.qualificationTypes);
 
-function collectDraftScopedOptions(field, scopes = {}) {
-  const selectedRegionSet = new Set(draftFilters.regions);
-  const selectedBranchSet = new Set(draftFilters.branches);
-  const selectedContractorSet = new Set(draftFilters.contractors);
-  const selectedProductLineSet = new Set(draftFilters.productLines);
-  const values = new Set();
+function buildDynamicFilterOptions(records, filters, baseOptions) {
+  const selectedSets = buildSelectedFilterSets(filters, baseOptions);
+  const buckets = Object.fromEntries(DYNAMIC_FILTER_KEYS.map((key) => [key, new Set()]));
 
-  importedRecords.value.forEach((record) => {
-    if (scopes.regions && selectedRegionSet.size && !selectedRegionSet.has(record.mappedRegion || '')) return;
-    if (scopes.branches && selectedBranchSet.size && !selectedBranchSet.has(record.branch || '')) return;
-    if (scopes.contractors && selectedContractorSet.size && !selectedContractorSet.has(record.contractorFilterValue || '')) return;
-    if (scopes.productLines && selectedProductLineSet.size && !selectedProductLineSet.has(record.productLine || '')) return;
-    const value = record[field];
-    if (value) values.add(value);
+  records.forEach((record) => {
+    DYNAMIC_FILTER_KEYS.forEach((targetKey, targetIndex) => {
+      for (const key of DYNAMIC_FILTER_KEYS.slice(0, targetIndex)) {
+        const selectedSet = selectedSets[key];
+        if (!selectedSet?.size) continue;
+        if (!selectedSet.has(getRecordFilterValue(record, key))) {
+          return;
+        }
+      }
+      if (targetKey === 'contractors' && !record.isChannelPartner) return;
+      const value = getRecordFilterValue(record, targetKey);
+      if (value) buckets[targetKey].add(value);
+    });
   });
 
-  return [...values].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+  return Object.fromEntries(
+    DYNAMIC_FILTER_KEYS.map((key) => [key, sortFilterValues([...buckets[key]])])
+  );
 }
 
-const dashboard = computed(() => buildQualificationDashboard(importedRecords.value, appliedFilters.value));
+function buildSelectedFilterSets(filters, baseOptions) {
+  return Object.fromEntries(
+    DYNAMIC_FILTER_KEYS.map((key) => [key, buildEffectiveSelectedSet(key, filters[key] || [], baseOptions?.[key] || [])])
+  );
+}
+
+function buildEffectiveSelectedSet(key, selectedValues, baseValues) {
+  const selected = selectedValues.filter(Boolean);
+  const base = (baseValues || []).filter(Boolean);
+  const baseSet = new Set(base);
+  const selectedSet = new Set(selected);
+  const allBaseSelected = base.length > 0 && base.every((value) => selectedSet.has(value));
+
+  if (key === 'contractors') {
+    if (allBaseSelected && selectedSet.has(NO_CONTRACTOR_LABEL)) return new Set();
+    return new Set(selected.filter((value) => value !== NO_CONTRACTOR_LABEL));
+  }
+
+  if (allBaseSelected) return new Set();
+  return new Set(selected.filter((value) => baseSet.has(value)));
+}
+
+function getRecordFilterValue(record, key) {
+  return record?.[DYNAMIC_FILTER_FIELDS[key]] || '';
+}
+
+function sortFilterValues(values) {
+  return [...new Set(values.filter(Boolean))].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+}
+
+function isHiddenImportWarning(warning) {
+  return String(warning || '').startsWith('未纳入统计');
+}
+
+const dashboard = computed(() => dashboardState.value);
 const hasData = computed(() => Boolean(importedRecords.value.length));
 const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的资质数据，请调整筛选条件。' : '请导入资质表'));
 const interactionDisabled = computed(() => loading.value || importOverlay.visible);
@@ -659,7 +681,8 @@ const dataStatusText = computed(() => {
 });
 const viewBusy = computed(() => restoringView.value || reactivatingView.value);
 const visualsActive = computed(() => props.active && !viewBusy.value);
-const warningMessage = computed(() => filterValidationMessage.value || importWarnings.value[0] || '');
+const visibleImportWarning = computed(() => (importWarnings.value || []).find((warning) => !isHiddenImportWarning(warning)) || '');
+const warningMessage = computed(() => filterValidationMessage.value || visibleImportWarning.value || '');
 const viewBusyMessage = computed(() => (
   restoringView.value
     ? '正在恢复上次资质地图数据，请稍候...'
@@ -722,7 +745,7 @@ const productLineBarOption = computed(() => buildBarOption(dashboard.value.produ
 const qualificationTypeBarOption = computed(() => buildTopTypeBarOption(dashboard.value.qualificationTypeDistribution, expandedSidePanels.qualificationType));
 const expiryTrendOption = computed(() => buildTrendOption(dashboard.value.expiryTrend));
 const branchProductLineOption = computed(() => buildBarOption(branchDetail.value.productLineDistribution || [], '有效资质'));
-const branchTypeOption = computed(() => buildDonutOption(branchDetail.value.qualificationTypeDistribution || []));
+const branchTypeOption = computed(() => buildBranchTypeBarOption(branchDetail.value.qualificationTypeDistribution || []));
 const branchRiskOption = computed(() => buildTrendOption(branchDetail.value.expiryDistribution || []));
 const displayedValidBranches = computed(() => (props.fullscreenActive
   ? dashboard.value.topValidBranches
@@ -804,6 +827,14 @@ watch(
     }
     await deferViewReactivation();
   }
+);
+
+watch(
+  () => dynamicFilterOptions.value,
+  () => {
+    pruneInvalidSpecificFilterSelections();
+  },
+  { deep: true }
 );
 
 onMounted(loadLastDataset);
@@ -1088,6 +1119,7 @@ async function handleFileImport(event) {
     const allFilters = createAllFiltersFromOptions();
     Object.assign(draftFilters, allFilters);
     appliedFilters.value = cloneFilters(allFilters);
+    refreshDashboard();
     resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP, {
       records: importedRecords.value,
@@ -1128,6 +1160,7 @@ function applyFilters() {
     qualificationTypes: [...draftFilters.qualificationTypes],
     status: draftFilters.status
   };
+  refreshDashboard();
   selectedBranch.value = '';
   detailKeyword.value = '';
   detailStatus.value = '全部';
@@ -1141,6 +1174,7 @@ function resetFilters() {
   const allFilters = createAllFiltersFromOptions();
   Object.assign(draftFilters, allFilters);
   appliedFilters.value = cloneFilters(allFilters);
+  refreshDashboard();
   selectedBranch.value = '';
   detailKeyword.value = '';
   detailStatus.value = '全部';
@@ -1245,18 +1279,51 @@ function createDefaultFilters() {
   };
 }
 
+function refreshDashboard(filters = appliedFilters.value) {
+  dashboardState.value = markRaw(buildQualificationDashboard(importedRecords.value, filters));
+}
+
+function pruneInvalidSpecificFilterSelections() {
+  if (!hasData.value) return;
+  let changed = false;
+  const optionMap = dynamicFilterOptions.value;
+  const baseOptions = filterOptions.value;
+
+  DYNAMIC_FILTER_KEYS.forEach((key) => {
+    const currentValues = draftFilters[key] || [];
+    if (!currentValues.length || isGlobalAllSelected(key, currentValues, baseOptions[key] || [])) return;
+    const optionSet = new Set(optionMap[key] || []);
+    const nextValues = currentValues.filter((value) => optionSet.has(value));
+    if (nextValues.length === currentValues.length) return;
+    draftFilters[key] = nextValues;
+    changed = true;
+  });
+
+  if (changed) {
+    filterValidationMessage.value = '';
+  }
+}
+
+function isGlobalAllSelected(key, selectedValues, baseValues) {
+  const base = (baseValues || []).filter(Boolean);
+  if (!base.length) return false;
+  const selectedSet = new Set((selectedValues || []).filter(Boolean));
+  if (!base.every((value) => selectedSet.has(value))) return false;
+  return key !== 'contractors' || selectedSet.has(NO_CONTRACTOR_LABEL);
+}
+
 function validateDraftFilters() {
   if (!hasData.value) {
     return { valid: false, message: '请先导入资质表后再查询。' };
   }
 
   const rules = [
-    { key: 'regions', label: '大区', options: filterOptions.value.regions },
+    { key: 'regions', label: '大区', options: regionFilterOptions.value },
     { key: 'branches', label: '分公司', options: branchFilterOptions.value },
     { key: 'contractors', label: '渠道商', options: contractorFilterOptions.value },
     { key: 'productLines', label: '产品线', options: productLineFilterOptions.value },
     { key: 'machineModels', label: '机器型号', options: machineModelFilterOptions.value },
-    { key: 'qualificationTypes', label: '服务资质类型', options: filterOptions.value.qualificationTypes }
+    { key: 'qualificationTypes', label: '服务资质类型', options: qualificationTypeFilterOptions.value }
   ];
   const missingLabels = [];
   const emptyOptionLabels = [];
@@ -1264,6 +1331,9 @@ function validateDraftFilters() {
   rules.forEach(({ key, label, options }) => {
     const optionList = options || [];
     if (!optionList.length) {
+      if (key === 'contractors' && (draftFilters.contractors || []).includes(NO_CONTRACTOR_LABEL)) {
+        return;
+      }
       emptyOptionLabels.push(label);
       return;
     }
@@ -1390,35 +1460,74 @@ function buildBarOption(seriesData, seriesName, expanded = false) {
   };
 }
 
-function buildDonutOption(seriesData) {
+function buildBranchTypeBarOption(seriesData) {
   if (!seriesData?.length) return null;
+  const rows = getDistributionRows(seriesData, false, 6);
+  const displayRows = [...rows].reverse();
   return {
     backgroundColor: 'transparent',
-    color: ['#00d4ff', '#00ff88', '#7dd3fc', '#38bdf8', '#5eead4', '#fbbf24'],
+    grid: { left: 82, right: 58, top: 12, bottom: 12 },
     tooltip: {
-      trigger: 'item'
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+      formatter: (params) => {
+        const current = params?.[0];
+        if (!current) return '';
+        return `${current.name}<br/>有效资质：${Number(current.value || 0).toLocaleString('zh-CN')}`;
+      }
     },
-    legend: {
-      bottom: 0,
-      textStyle: { color: '#9eb9d6' }
+    xAxis: {
+      type: 'value',
+      axisLine: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+      max: ({ max }) => Math.ceil(Number(max || 0) * 1.22) || 1
+    },
+    yAxis: {
+      type: 'category',
+      data: displayRows.map((item) => item.name),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: '#d7e8fa',
+        width: 76,
+        overflow: 'truncate',
+        formatter: (value) => truncateLabel(value, 8)
+      }
     },
     series: [
       {
-        type: 'pie',
-        radius: ['48%', '72%'],
-        center: ['50%', '44%'],
+        type: 'bar',
+        data: displayRows.map((item) => item.value),
+        barWidth: 12,
+        showBackground: true,
+        backgroundStyle: {
+          color: 'rgba(96, 165, 250, 0.08)',
+          borderRadius: 999
+        },
         itemStyle: {
-          borderColor: '#091427',
-          borderWidth: 2
+          borderRadius: 999,
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 1,
+            y2: 0,
+            colorStops: [
+              { offset: 0, color: '#00d4ff' },
+              { offset: 1, color: '#00ff88' }
+            ]
+          }
         },
         label: {
-          color: '#dcecff',
-          formatter: '{b}'
-        },
-        data: seriesData.map((item) => ({
-          name: item.name,
-          value: item.value
-        }))
+          show: true,
+          position: 'right',
+          distance: 6,
+          color: '#eef8ff',
+          fontWeight: 700,
+          formatter: ({ value }) => formatChartLabelNumber(value)
+        }
       }
     ]
   };
@@ -1472,7 +1581,7 @@ function buildTopTypeBarOption(seriesData, expanded = false) {
 
   return {
     backgroundColor: 'transparent',
-    grid: { left: 10, right: 14, top: 8, bottom: 8, containLabel: true },
+    grid: { left: 10, right: 72, top: 8, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
@@ -1487,7 +1596,8 @@ function buildTopTypeBarOption(seriesData, expanded = false) {
       axisLine: { show: false },
       axisTick: { show: false },
       splitLine: { show: false },
-      axisLabel: { show: false }
+      axisLabel: { show: false },
+      max: ({ max }) => Math.ceil(Number(max || 0) * 1.2) || 1
     },
     yAxis: {
       type: 'category',
@@ -1528,9 +1638,10 @@ function buildTopTypeBarOption(seriesData, expanded = false) {
         label: {
           show: true,
           position: 'right',
+          distance: 6,
           color: '#eef8ff',
           fontWeight: 700,
-          formatter: ({ value }) => formatShortNumber(value),
+          formatter: ({ value }) => formatChartLabelNumber(value),
           avoidLabelOverlap: true
         }
       }
@@ -1564,6 +1675,10 @@ function formatShortNumber(value) {
   const numericValue = Number(value || 0);
   if (numericValue < 10000) return String(numericValue);
   return `${(numericValue / 10000).toFixed(1).replace(/\.0$/, '')}万`;
+}
+
+function formatChartLabelNumber(value) {
+  return Number(value || 0).toLocaleString('zh-CN');
 }
 
 function createImportOverlayState() {
@@ -1659,6 +1774,7 @@ async function loadLastDataset() {
   const allFilters = createAllFiltersFromOptions();
   Object.assign(draftFilters, allFilters);
   appliedFilters.value = cloneFilters(allFilters);
+  refreshDashboard();
   selectedBranch.value = '';
   detailKeyword.value = '';
   detailStatus.value = '全部';

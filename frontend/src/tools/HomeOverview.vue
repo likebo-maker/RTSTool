@@ -158,8 +158,8 @@ const baseTools = [
   },
   {
     key: 'training-coverage-map',
-    name: '中国区培训覆盖地图',
-    description: '查看全国分公司培训覆盖、培训场次、合格率及培训类型分布情况。',
+    name: '中国区培训中心建设/交付地图',
+    description: '查看培训中心建设承接能力，以及全国培训交付、培训场次、合格率和培训类型分布情况。',
     icon: Presentation
   },
   {

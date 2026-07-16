@@ -11,7 +11,8 @@ export const LOCAL_DATASET_KEYS = {
   ONLINE_SERVICE_TARGET: 'online_service_target',
   ONLINE_SERVICE_ASSESSMENT: 'online_service_assessment',
   SERVICE_QUALIFICATION_MAP: 'service_qualification_map',
-  TRAINING_COVERAGE_MAP: 'training_coverage_map'
+  TRAINING_COVERAGE_MAP: 'training_coverage_map',
+  TRAINING_CONSTRUCTION_MAP: 'training_construction_map'
 };
 
 export async function saveToolDataset(toolKey, payload) {

@@ -64,7 +64,7 @@ const capabilities = [
   { label: '工单处理', icon: ClipboardList },
   { label: '数据分析', icon: BarChart3 },
   { label: '服务资质地图', icon: MapPinned },
-  { label: '培训覆盖地图', icon: GraduationCap },
+  { label: '培训中心建设/交付地图', icon: GraduationCap },
   { label: 'E课堂数据处理', icon: GraduationCap },
   { label: '授权管理', icon: KeyRound },
   { label: '智能辅助', icon: Bot }

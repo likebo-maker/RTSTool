@@ -2,18 +2,18 @@
   <div
     ref="pageRef"
     class="tool-page qualification-page training-page"
-    :class="{ 'fullscreen-workspace': fullscreenActive, 'fullscreen-filter-open': fullscreenFiltersOpen, 'presentation-mode': presentationCarouselEnabled }"
+    :class="{ 'fullscreen-workspace': fullscreenActive, 'fullscreen-filter-open': fullscreenFiltersOpen, 'presentation-mode': presentationCarouselEnabled, 'embedded-tool-page': embedded }"
     @mousemove="handleFullscreenMouseMove"
   >
-    <section v-if="!fullscreenActive" class="tool-header qualification-tool-header">
+    <section v-if="!fullscreenActive && !embedded" class="tool-header qualification-tool-header">
       <div class="qualification-tool-heading">
         <div class="tool-icon">
           <Presentation :size="24" />
         </div>
         <div>
-          <p class="section-kicker">TRAINING COVERAGE MAP</p>
-          <h1>中国区培训覆盖地图</h1>
-          <p>基于面授课程培训数据，按分公司、大区、产线、培训周期和培训结果展示全国培训覆盖与效果</p>
+          <p class="section-kicker">TRAINING CENTER DELIVERY</p>
+          <h1>中国区培训中心交付地图</h1>
+          <p>基于面授课程培训数据，按分公司、大区、产线、培训周期和培训结果展示全国培训交付与效果</p>
         </div>
       </div>
       <div class="qualification-header-actions">
@@ -55,8 +55,8 @@
 
     <section v-else class="fullscreen-training-toolbar">
       <div class="fullscreen-training-title">
-        <strong>中国区培训覆盖地图</strong>
-        <span>Training Coverage Map</span>
+        <strong>中国区培训中心交付地图</strong>
+        <span>Training Center Delivery</span>
       </div>
       <div
         class="fullscreen-training-actions"
@@ -174,6 +174,7 @@
         </section>
         <TrainingCoverageAmap
           v-model:displayMode="displayMode"
+          :active="active"
           :points="dashboard.mapPoints"
           :loading="loading"
           :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen"
@@ -589,6 +590,14 @@ const props = defineProps({
   fullscreenActive: {
     type: Boolean,
     default: false
+  },
+  active: {
+    type: Boolean,
+    default: true
+  },
+  embedded: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -765,14 +774,15 @@ const carouselSequence = computed(() => {
 });
 
 watchEffect(() => {
+  if (!props.active) return;
   if (!props.fullscreenActive && fullscreenFiltersOpen.value) {
     fullscreenFiltersOpen.value = false;
   }
   if (loading.value) {
-    emit('status-change', '培训覆盖地图数据处理中');
+    emit('status-change', '培训中心交付地图数据处理中');
     return;
   }
-  emit('status-change', hasData.value ? `培训覆盖地图就绪，当前 ${dashboard.value.filteredRecords.length} 条` : '中国区培训覆盖地图待导入数据');
+  emit('status-change', hasData.value ? `培训中心交付地图就绪，当前 ${dashboard.value.filteredRecords.length} 条` : '中国区培训中心交付地图待导入数据');
 });
 
 onMounted(loadLastDataset);
@@ -1090,7 +1100,7 @@ function applyFilters() {
   detailStatus.value = '全部';
   resetSidePanelExpansion();
   sideAnalysisIndex.value = 0;
-  emit('log', `刷新培训覆盖地图，当前结果 ${dashboard.value.filteredRecords.length} 条`);
+  emit('log', `刷新培训中心交付地图，当前结果 ${dashboard.value.filteredRecords.length} 条`);
 }
 
 function resetFilters() {
@@ -1103,7 +1113,7 @@ function resetFilters() {
   detailStatus.value = '全部';
   resetSidePanelExpansion();
   sideAnalysisIndex.value = 0;
-  emit('log', '已重置培训覆盖地图筛选条件');
+  emit('log', '已重置培训中心交付地图筛选条件');
 }
 
 function selectSideTab(tabKey) {
@@ -1151,7 +1161,7 @@ async function exportCurrentResult() {
   await runExportFeedback(
     'current',
     '正在导出当前结果',
-    '系统正在生成培训覆盖筛选结果 Excel，请不要重复点击导出按钮。',
+    '系统正在生成培训中心交付筛选结果 Excel，请不要重复点击导出按钮。',
     () => {
       exportTrainingRecords(dashboard.value.filteredRecords);
       emit('log', `已导出当前培训结果，共 ${dashboard.value.filteredRecords.length} 条`);
@@ -1510,6 +1520,6 @@ async function loadLastDataset() {
   detailKeyword.value = '';
   detailStatus.value = '全部';
   resetSidePanelExpansion();
-  emit('log', `已加载上次培训覆盖地图数据，共 ${importedRecords.value.length} 条`);
+  emit('log', `已加载上次培训中心交付地图数据，共 ${importedRecords.value.length} 条`);
 }
 </script>

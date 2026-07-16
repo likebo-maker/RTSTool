@@ -2,8 +2,8 @@
   <section class="glass-panel qualification-map-panel">
     <div class="panel-title-row">
       <div>
-        <p class="section-kicker">National Training Coverage</p>
-        <h2>中国区培训覆盖地图</h2>
+        <p class="section-kicker">Training Center Delivery</p>
+        <h2>中国区培训中心交付地图</h2>
       </div>
       <div class="training-map-head-actions">
         <div class="training-mode-switch">
@@ -19,13 +19,13 @@
           </button>
         </div>
         <span class="status-pill" :class="mapReady ? 'success' : 'warning'">
-          {{ mapReady ? '地图已就绪' : '地图初始化中' }}
+          {{ mapReady ? '离线地图已就绪' : '离线地图初始化中' }}
         </span>
       </div>
     </div>
 
     <div class="qualification-map-shell">
-      <div ref="mapRef" class="qualification-amap-root"></div>
+      <div ref="chartRef" class="qualification-amap-root"></div>
 
       <div class="qualification-map-legend">
         <span class="qualification-map-legend-title">{{ legendConfig.title }}</span>
@@ -54,7 +54,7 @@
 
       <div v-if="loading" class="qualification-map-overlay">
         <LoaderCircle class="spin" :size="24" />
-        <span>培训覆盖地图加载中</span>
+        <span>培训中心交付地图加载中</span>
       </div>
       <div v-else-if="errorMessage" class="qualification-map-overlay error">
         <MapPinned :size="24" />
@@ -71,9 +71,15 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
-import { loadAmapSdk } from '../utils/amapLoader';
 import { getTrainingRegionGroups } from '../utils/branchRegionMap';
 import { resolveTrainingPointTone } from '../utils/trainingAggregator';
+import {
+  buildOfflineChinaMapOption,
+  escapeMapHtml,
+  hideOfflineMapTooltip,
+  initOfflineChinaMap,
+  showOfflineMapTooltip
+} from '../utils/offlineChinaMap';
 
 const props = defineProps({
   points: {
@@ -83,6 +89,10 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  active: {
+    type: Boolean,
+    default: true
   },
   fullscreenActive: {
     type: Boolean,
@@ -171,377 +181,181 @@ const regionLegendItems = computed(() => {
     count: regionCounts.get(region.name) || 0
   }));
 
-  items.push({
-    name: '未匹配大区',
-    color: '#94a3b8',
-    count: regionCounts.get('未匹配大区') || 0
-  });
+  const unmatchedCount = regionCounts.get('未匹配大区') || 0;
+  if (unmatchedCount) {
+    items.push({
+      name: '未匹配大区',
+      color: '#94a3b8',
+      count: unmatchedCount
+    });
+  }
   return items;
 });
 
-const mapRef = ref(null);
+const chartRef = ref(null);
 const mapReady = ref(false);
 const errorMessage = ref('');
-let mapInstance = null;
-let markers = [];
-let labelMarkers = [];
-let regionLayers = [];
-let infoWindow = null;
-let resizeTimerIds = [];
-
-const MAP_INTERACTION_STATUS = {
-  dragEnable: true,
-  zoomEnable: true,
-  scrollWheel: true,
-  doubleClickZoom: true,
-  keyboardEnable: true,
-  touchZoom: true
-};
+let chartInstance = null;
 
 onMounted(async () => {
-  window.addEventListener('resize', scheduleMapResize);
-  document.addEventListener('fullscreenchange', scheduleMapResize);
+  window.addEventListener('resize', handleResize);
+  document.addEventListener('fullscreenchange', handleResize);
   await nextTick();
-  await initMap();
+  initChart();
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', scheduleMapResize);
-  document.removeEventListener('fullscreenchange', scheduleMapResize);
-  resizeTimerIds.forEach((timerId) => window.clearTimeout(timerId));
-  resizeTimerIds = [];
-  clearMarkers();
-  clearLabelMarkers();
-  clearRegionLayers();
-  infoWindow?.close();
-  mapInstance?.destroy?.();
-  mapInstance = null;
+  window.removeEventListener('resize', handleResize);
+  document.removeEventListener('fullscreenchange', handleResize);
+  disposeChart();
 });
 
-watch(() => props.points, renderMarkers, { deep: true });
-watch(() => props.selectedBranch, updateMarkerActiveState);
 watch(
-  () => props.focusedBranch,
-  () => {
-    updateMarkerActiveState();
-    renderPresentationLabels();
-    if (!props.focusedBranch) {
-      infoWindow?.close();
-      return;
-    }
-    openFocusedInfoWindow();
-  }
+  () => props.points,
+  () => renderChart(),
+  { deep: true }
 );
+
+watch(
+  () => [props.selectedBranch, props.focusedBranch],
+  () => applyFocus()
+);
+
 watch(
   () => props.presentationMode,
-  () => {
-    renderPresentationLabels();
-    updateMarkerActiveState();
-    if (!props.presentationMode) {
-      infoWindow?.close();
-      return;
-    }
-    openFocusedInfoWindow();
+  () => renderChart()
+);
+
+watch(
+  () => props.selectedRegions,
+  () => renderChart(),
+  { deep: true }
+);
+
+watch(
+  () => props.displayMode,
+  () => renderChart()
+);
+
+watch(
+  () => props.loading,
+  () => renderChart()
+);
+
+watch(
+  () => props.active,
+  async (isActive) => {
+    if (!isActive) return;
+    await nextTick();
+    renderChart();
+    handleResize();
   }
 );
-watch(() => props.labelBranches, renderPresentationLabels, { deep: true });
-watch(() => props.loading, (isLoading) => { if (!isLoading) renderMarkers(); });
-watch(() => props.selectedRegions, renderRegionLayers, { deep: true });
-watch(() => props.displayMode, renderMarkers);
+
 watch(
   () => props.fullscreenActive,
-  () => {
-    scheduleMapResize();
+  async () => {
+    await nextTick();
+    handleResize();
   }
 );
 
-async function scheduleMapResize() {
-  await nextTick();
-  resizeTimerIds.forEach((timerId) => window.clearTimeout(timerId));
-  resizeTimerIds = [60, 180, 420, 760].map((delay) => window.setTimeout(() => {
-    if (!mapInstance) return;
-    mapInstance.resize?.();
-    enableMapInteractions();
-    renderRegionLayers();
-    if (!markers.length && props.points.length) {
-      renderMarkers({ fitView: false });
-    } else {
-      updateMarkerActiveState();
-      renderPresentationLabels();
-      openFocusedInfoWindow();
-    }
-  }, delay));
-}
-
-async function initMap() {
+function initChart() {
+  if (!chartRef.value) return;
   try {
-    const AMap = await loadAmapSdk();
-    if (!mapRef.value) return;
-    await waitForStableMapSize();
-    mapInstance = new AMap.Map(mapRef.value, {
-      zoom: 4.6,
-      center: [104.195397, 35.86166],
-      mapStyle: 'amap://styles/dark',
-      resizeEnable: true,
-      ...MAP_INTERACTION_STATUS
-    });
-    enableMapInteractions();
-    mapInstance.addControl(new AMap.Scale());
-    mapInstance.addControl(new AMap.ToolBar({ position: 'RB' }));
+    chartInstance = initOfflineChinaMap(chartRef.value);
+    chartInstance.on('click', handleChartClick);
     mapReady.value = true;
-    renderRegionLayers();
-    renderMarkers();
-    scheduleMapResize();
+    renderChart();
   } catch (error) {
-    errorMessage.value = error.message || '高德地图初始化失败，请检查网络或 key 配置';
+    errorMessage.value = error.message || '离线地图初始化失败';
   }
 }
 
-function enableMapInteractions() {
-  mapInstance?.setStatus?.(MAP_INTERACTION_STATUS);
-}
-
-async function waitForStableMapSize() {
-  for (let index = 0; index < 8; index += 1) {
-    await nextTick();
-    const rect = mapRef.value?.getBoundingClientRect?.();
-    if (rect?.width > 0 && rect?.height > 0) return true;
-    await new Promise((resolve) => window.setTimeout(resolve, 80));
-  }
-  return false;
-}
-
-function renderRegionLayers() {
-  if (!mapInstance || !window.AMap?.DistrictLayer?.Province) return;
-  clearRegionLayers();
-  const selectedRegionSet = new Set(props.selectedRegions || []);
-  getTrainingRegionGroups().forEach((region) => {
-    const isActive = !selectedRegionSet.size || selectedRegionSet.has(region.name);
-    const layer = new window.AMap.DistrictLayer.Province({
-      zIndex: 12,
-      adcode: region.adcodes,
-      depth: 0,
-      styles: {
-        fill: isActive ? region.fill : 'rgba(255,255,255,0.025)',
-        'province-stroke': isActive ? region.color : 'rgba(255,255,255,0.08)',
-        'city-stroke': 'rgba(255,255,255,0.12)',
-        'county-stroke': 'rgba(255,255,255,0.04)'
-      }
-    });
-    layer.setMap(mapInstance);
-    regionLayers.push(layer);
+function renderChart() {
+  if (!chartInstance || props.loading) return;
+  const option = buildOfflineChinaMapOption({
+    points: props.points,
+    regionGroups: getTrainingRegionGroups(),
+    selectedRegions: props.selectedRegions,
+    selectedKey: props.selectedBranch,
+    focusedKey: props.focusedBranch,
+    labelKeys: props.presentationMode ? props.labelBranches : [],
+    pointKeyResolver: resolvePointKey,
+    pointNameResolver: resolvePointKey,
+    pointToneResolver: (point) => resolveTrainingPointTone(point, props.displayMode),
+    pointMetricResolver: resolvePointMetric,
+    labelMetricResolver: resolvePointMetricLabel,
+    tooltipFormatter: buildPointTooltip
+  });
+  chartInstance.setOption(option, true);
+  chartInstance.resize();
+  applyFocus();
+  requestAnimationFrame(() => {
+    chartInstance?.resize();
+    applyFocus();
   });
 }
 
-function renderMarkers(options = {}) {
-  if (!mapInstance || props.loading) return;
-  const { fitView = true } = options;
-  clearMarkers();
-  clearLabelMarkers();
-  infoWindow?.close();
-  if (!props.points.length) return;
+function handleChartClick(params) {
+  const key = params?.data?.point ? resolvePointKey(params.data.point) : params?.data?.key;
+  if (!key) return;
+  emit('select-center', key);
+  emit('select-branch', key);
+}
 
-  const AMap = window.AMap;
-  props.points.forEach((point) => {
-    const markerKey = point.trainingCenter || point.branch;
-    const markerElement = document.createElement('button');
-    markerElement.className = `qualification-map-marker training-map-point ${resolveTrainingPointTone(point, props.displayMode)}`;
-    markerElement.style.width = '20px';
-    markerElement.style.height = '20px';
-    markerElement.innerHTML = '<span></span>';
-    markerElement.type = 'button';
-
-    const marker = new AMap.Marker({
-      position: point.coords,
-      content: markerElement,
-      anchor: 'center',
-      zIndex: 200
-    });
-
-    const selectMarker = () => {
-      markerElement.blur();
-      marker.setTop?.(true);
-      openInfoWindow(point, marker);
-      emit('select-center', markerKey);
-    };
-
-    markerElement.addEventListener('mouseenter', () => openInfoWindow(point, marker));
-    markerElement.addEventListener('mouseleave', () => {
-      if (props.presentationMode) return;
-      window.setTimeout(() => infoWindow?.close(), 120);
-    });
-    markerElement.addEventListener('click', selectMarker);
-    marker.on?.('mouseover', () => openInfoWindow(point, marker));
-    marker.on?.('mouseout', () => {
-      if (props.presentationMode) return;
-      window.setTimeout(() => infoWindow?.close(), 120);
-    });
-    marker.on?.('click', selectMarker);
-
-    marker.__branch = markerKey;
-    marker.__element = markerElement;
-    marker.setMap(mapInstance);
-    markers.push(marker);
-  });
-
-  if (fitView) {
-    mapInstance.setFitView(markers, false, [80, 40, 40, 60]);
+function applyFocus() {
+  if (!chartInstance) return;
+  const targetKey = props.focusedBranch || props.selectedBranch;
+  if (!targetKey) {
+    hideOfflineMapTooltip(chartInstance);
+    return;
   }
-  enableMapInteractions();
-  updateMarkerActiveState();
-  renderPresentationLabels();
-  openFocusedInfoWindow();
-}
-
-function clearMarkers() {
-  markers.forEach((marker) => marker.setMap?.(null));
-  markers = [];
-}
-
-function clearRegionLayers() {
-  regionLayers.forEach((layer) => layer.setMap?.(null));
-  regionLayers = [];
-}
-
-function updateMarkerActiveState() {
-  markers.forEach((marker) => {
-    const isActive = marker.__branch === props.selectedBranch;
-    const isFocused = props.presentationMode && marker.__branch === props.focusedBranch;
-    marker.__element?.classList.toggle('active', isActive || isFocused);
-    marker.__element?.classList.toggle('presentation-focus', isFocused);
-    if (isFocused) {
-      marker.setTop?.(true);
-      marker.setzIndex?.(500);
-    } else {
-      marker.setzIndex?.(200);
-    }
-  });
-}
-
-function renderPresentationLabels() {
-  if (!mapInstance) return;
-  clearLabelMarkers();
-  if (!props.presentationMode || !props.points.length) return;
-
-  const AMap = window.AMap;
-  if (!AMap) return;
-  const pointByCenter = new Map(props.points.map((point) => [resolvePointKey(point), point]));
-  const focusedPoint = pointByCenter.get(props.focusedBranch) || pointByCenter.get(props.labelBranches[0]);
-  const labelPoints = focusedPoint ? [focusedPoint] : [];
-  labelPoints.forEach((point, index) => {
-    const marker = new AMap.Marker({
-      position: point.coords,
-      content: buildPresentationLabelContent(point, index, true),
-      anchor: 'bottom-center',
-      offset: resolveLabelOffset(index),
-      zIndex: 560
-    });
-    marker.setMap(mapInstance);
-    labelMarkers.push(marker);
-  });
-}
-
-function clearLabelMarkers() {
-  if (!labelMarkers.length) return;
-  labelMarkers.forEach((marker) => marker.setMap?.(null));
-  labelMarkers = [];
-}
-
-function buildPresentationLabelContent(point, index, isFocused = false) {
-  const element = document.createElement('div');
-  element.className = `qualification-map-label ${resolveTrainingPointTone(point, props.displayMode)} label-${index % 6}${isFocused ? ' auto-focus-label' : ''}`;
-  element.innerHTML = `
-    <span class="qualification-map-label-line"></span>
-    <strong>${escapeHtml(resolvePointKey(point))}</strong>
-    <em>${isFocused ? `轮播讲解｜${point.traineeCount}` : point.traineeCount}</em>
-  `;
-  return element;
-}
-
-function resolveLabelOffset(index) {
-  const AMap = window.AMap;
-  const offsets = [
-    [72, -16],
-    [-72, -16],
-    [76, -58],
-    [-76, -58],
-    [0, -78],
-    [0, 30]
-  ];
-  const [x, y] = offsets[index % offsets.length];
-  return new AMap.Pixel(x, y);
-}
-
-function openFocusedInfoWindow() {
-  if (!props.presentationMode || !props.focusedBranch || !mapInstance) return;
-  const marker = markers.find((item) => item.__branch === props.focusedBranch);
-  const point = props.points.find((item) => resolvePointKey(item) === props.focusedBranch);
-  if (!marker || !point) return;
-  openInfoWindow(point, marker);
-  if (props.fullscreenActive && shouldPanToPoint(point.coords)) {
-    mapInstance.panTo?.(point.coords);
-  }
-}
-
-function shouldPanToPoint(coords) {
-  if (!mapInstance || !coords?.length) return false;
-  const AMap = window.AMap;
-  if (!AMap) return false;
-  try {
-    const bounds = mapInstance.getBounds?.();
-    const lngLat = new AMap.LngLat(coords[0], coords[1]);
-    return !bounds?.contains?.(lngLat);
-  } catch {
-    return false;
-  }
-}
-
-function openInfoWindow(point, marker) {
-  const AMap = window.AMap;
-  if (!AMap) return;
-  if (!infoWindow) {
-    infoWindow = new AMap.InfoWindow({
-      offset: new AMap.Pixel(0, -18),
-      isCustom: true,
-      autoMove: false
-    });
-  }
-  const modeLabel = resolveModeLabel(point);
-  const content = document.createElement('div');
-  content.className = 'qualification-map-info-window';
-  content.innerHTML = `
-    <strong>${escapeHtml(point.trainingCenter || point.branch)}</strong>
-    <span>定位城市：${escapeHtml(point.city || '-')}</span>
-    <span>大区：${escapeHtml(point.mappedRegion || '未匹配大区')}</span>
-    <span>培训人次：${point.traineeCount}</span>
-    <span>培训记录数：${point.recordCount}</span>
-    <span>培训场次：${point.sessionCount}</span>
-    <span>合格率：${escapeHtml(point.passRate)}</span>
-    <span>不合格人次：${point.failCount}</span>
-    <span>主要产线：${escapeHtml(point.primaryProductLines)}</span>
-    <span>主要培训类型：${escapeHtml(point.primaryTrainingTypes)}</span>
-    <span>当前主指标：${escapeHtml(modeLabel)}</span>
-  `;
-  infoWindow.setContent(content);
-  infoWindow.open(mapInstance, marker.getPosition());
+  showOfflineMapTooltip(chartInstance, props.points, resolvePointKey, targetKey);
 }
 
 function resolvePointKey(point) {
   return point?.trainingCenter || point?.branch || '';
 }
 
-function resolveModeLabel(point) {
+function resolvePointMetric(point) {
+  if (props.displayMode === 'session-count') return point.sessionCount;
+  if (props.displayMode === 'pass-rate') return point.passRateValue ?? 0;
+  return point.traineeCount;
+}
+
+function resolvePointMetricLabel(point) {
   if (props.displayMode === 'session-count') return `培训场次 ${point.sessionCount}`;
   if (props.displayMode === 'pass-rate') return `合格率 ${point.passRate}`;
   return `培训人次 ${point.traineeCount}`;
 }
 
-function escapeHtml(text) {
-  return String(text ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+function buildPointTooltip(point) {
+  if (!point) return '';
+  return `
+    <div class="qualification-map-info-window">
+      <strong>${escapeMapHtml(point.trainingCenter || point.branch)}</strong>
+      <span>定位城市：${escapeMapHtml(point.city || '-')}</span>
+      <span>大区：${escapeMapHtml(point.mappedRegion || '未匹配大区')}</span>
+      <span>培训人次：${Number(point.traineeCount || 0).toLocaleString('zh-CN')}</span>
+      <span>培训记录数：${Number(point.recordCount || 0).toLocaleString('zh-CN')}</span>
+      <span>培训场次：${Number(point.sessionCount || 0).toLocaleString('zh-CN')}</span>
+      <span>合格率：${escapeMapHtml(point.passRate)}</span>
+      <span>不合格人次：${Number(point.failCount || 0).toLocaleString('zh-CN')}</span>
+      <span>主要产线：${escapeMapHtml(point.primaryProductLines)}</span>
+      <span>主要培训类型：${escapeMapHtml(point.primaryTrainingTypes)}</span>
+    </div>
+  `;
+}
+
+function handleResize() {
+  chartInstance?.resize();
+}
+
+function disposeChart() {
+  if (!chartInstance) return;
+  chartInstance.off('click', handleChartClick);
+  chartInstance.dispose();
+  chartInstance = null;
 }
 </script>

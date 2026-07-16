@@ -4,6 +4,7 @@ import { resolveBranchRegion } from './branchGeoMap';
 import {
   resolveContractorFilterValue,
   resolveQualificationBranch,
+  SHENZHEN_HEADQUARTERS,
   UNMATCHED_BRANCH
 } from './qualificationBranchResolver';
 
@@ -14,8 +15,8 @@ const ROW_YIELD_INTERVAL = 2000;
 const HEADER_ALIASES = {
   employeeId: ['员工/分包商/经销商编号', '人工编号', '员工编号', '人员编号', '工号', '员工号'],
   personName: ['员工/分包商/经销商名称', '人员姓名', '姓名', '员工姓名', '工程师姓名'],
-  contractorCode: ['分包商编码'],
-  contractorName: ['分包商名称'],
+  contractorCode: ['分包商编码', '渠道商编码', '渠道编码'],
+  contractorName: ['分包商名称', '渠道商', '渠道商名称', '渠道名称'],
   branch: ['所属分公司', '分公司', '所属公司'],
   region: ['区域', '大区'],
   productLine: ['产品线描述'],
@@ -47,6 +48,7 @@ export async function parseQualificationFiles(fileList, options = {}) {
   const records = [];
   const warnings = [];
   const unmatchedBranchSamples = new Set();
+  let unmatchedBranchCount = 0;
 
   for (const [fileIndex, file] of files.entries()) {
     reportProgress?.({
@@ -127,8 +129,12 @@ export async function parseQualificationFiles(fileList, options = {}) {
           rowNumber: rowIndex + 1
         });
         if (!record) continue;
-        if (record.branch === UNMATCHED_BRANCH && unmatchedBranchSamples.size < 10) {
-          unmatchedBranchSamples.add(record.contractorName || record.rawBranch || `${sheetName} 第 ${rowIndex + 1} 行`);
+        if (record.__skipReason === 'unmatchedBranch') {
+          unmatchedBranchCount += 1;
+          if (unmatchedBranchSamples.size < 10) {
+            unmatchedBranchSamples.add(record.contractorName || record.rawBranch || `${sheetName} 第 ${rowIndex + 1} 行`);
+          }
+          continue;
         }
         records.push(record);
       }
@@ -136,7 +142,7 @@ export async function parseQualificationFiles(fileList, options = {}) {
   }
 
   if (unmatchedBranchSamples.size) {
-    warnings.push(`部分渠道商未能按离线规则匹配分公司：${[...unmatchedBranchSamples].join('、')}`);
+    warnings.push(`未纳入统计 ${unmatchedBranchCount} 条：未能按离线规则匹配到六个大区内的分公司。示例：${[...unmatchedBranchSamples].join('、')}`);
   }
 
   if (!records.length) {
@@ -195,11 +201,32 @@ function buildRecordFromRow({ row, columnIndexMap, fileName, sheetName, rowNumbe
     return null;
   }
 
-  const branch = resolveQualificationBranch({ rawBranch, contractorName, sourceSheet: sheetName }) || UNMATCHED_BRANCH;
+  const branch = resolveQualificationBranch({ rawBranch, contractorName, sourceSheet: sheetName });
+  if (!branch) {
+    return rawBranch && !shouldExcludeBranch(rawBranch)
+      ? {
+          __skipReason: 'unmatchedBranch',
+          rawBranch,
+          contractorName,
+          sourceSheet: sheetName,
+          sourceRow: rowNumber
+        }
+      : null;
+  }
   if (shouldExcludeBranch(branch)) return null;
 
   const statusMeta = buildQualificationStatus(expiryRaw);
   const mappedRegion = resolveBranchRegion(branch);
+  if (branch === UNMATCHED_BRANCH || !mappedRegion) {
+    if (branch === SHENZHEN_HEADQUARTERS) return null;
+    return {
+      __skipReason: 'unmatchedBranch',
+      rawBranch,
+      contractorName,
+      sourceSheet: sheetName,
+      sourceRow: rowNumber
+    };
+  }
   const personName = personNameCandidate || contractorName || organization || '未命名人员';
   const normalizedSheetName = normalizeSheetName(sheetName);
 

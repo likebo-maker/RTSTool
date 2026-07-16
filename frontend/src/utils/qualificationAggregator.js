@@ -182,8 +182,9 @@ function countUniquePeople(records) {
 function countUniqueContractors(records) {
   return new Set(
     records
+      .filter((record) => record.isChannelPartner)
       .map((record) => String(record.contractorName || '').trim())
-      .filter(Boolean)
+      .filter((value) => value && value !== NO_CONTRACTOR_LABEL)
   ).size;
 }
 

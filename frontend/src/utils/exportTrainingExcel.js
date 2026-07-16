@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 
-export function exportTrainingRecords(records, fileName = '中国区培训覆盖筛选结果.xlsx') {
+export function exportTrainingRecords(records, fileName = '中国区培训中心交付筛选结果.xlsx') {
   const rows = records.map((record) => ({
     学员姓名: record.studentName || '',
     分公司: record.branch,
@@ -23,6 +23,34 @@ export function exportTrainingRecords(records, fileName = '中国区培训覆盖
 export function exportBranchTrainingRecords(branch, records) {
   const safeBranch = String(branch || '分公司').replace(/[\\/:*?"<>|]/g, '_');
   exportTrainingRecords(records, `${safeBranch}_培训明细.xlsx`);
+}
+
+export function exportTrainingConstructionRecords(records, fileName = '中国区培训中心建设筛选结果.xlsx') {
+  const rows = records.map((record) => ({
+    培训中心: record.centerName,
+    中心类型: record.centerType,
+    大区: record.mappedRegion,
+    省份: record.province,
+    城市: record.city,
+    分公司: record.branchName,
+    地址: record.address,
+    产线: record.productLine,
+    课程名称: record.courseName,
+    子产线: record.subProductLine,
+    机型大类: record.modelCategory,
+    授予资质类型: record.qualificationType,
+    需要样机型号: record.requiredModel,
+    讲师: record.teacherText,
+    产线来源: record.productLineSource,
+    来源Sheet: record.sourceSheet,
+    来源行: record.sourceRow
+  }));
+  writeWorkbook(rows, '建设明细', fileName);
+}
+
+export function exportTrainingConstructionCenterRecords(centerName, records) {
+  const safeCenter = String(centerName || '培训中心').replace(/[\\/:*?"<>|]/g, '_');
+  exportTrainingConstructionRecords(records, `${safeCenter}_建设明细.xlsx`);
 }
 
 function writeWorkbook(rows, sheetName, fileName) {

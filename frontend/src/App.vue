@@ -86,16 +86,7 @@
           @log="appendLog"
         />
         <div v-else-if="activeTool === 'service-qualification-map'" class="cached-tool-placeholder"></div>
-        <TrainingCoverageMap
-          v-else-if="activeTool === 'training-coverage-map'"
-          :can-export-excel="canExportExcel"
-          :fullscreen-active="isBrowserFullscreen && activeTool === 'training-coverage-map'"
-          @enter-fullscreen="enterBrowserFullscreen"
-          @exit-fullscreen="exitBrowserFullscreen"
-          @feature-blocked="showUnauthorizedFeature"
-          @status-change="handleStatusChange"
-          @log="appendLog"
-        />
+        <div v-else-if="activeTool === 'training-coverage-map'" class="cached-tool-placeholder"></div>
         <HomeOverview
           v-else-if="activeTool === 'home'"
           :license-info="licenseStatusInfo"
@@ -113,6 +104,18 @@
           :active="!routeBlocked && activeTool === 'service-qualification-map'"
           :can-export-excel="canExportExcel"
           :fullscreen-active="isBrowserFullscreen && activeTool === 'service-qualification-map'"
+          @enter-fullscreen="enterBrowserFullscreen"
+          @exit-fullscreen="exitBrowserFullscreen"
+          @feature-blocked="showUnauthorizedFeature"
+          @status-change="handleStatusChange"
+          @log="appendLog"
+        />
+        <TrainingCenterMap
+          v-if="trainingMapMounted"
+          v-show="!routeBlocked && activeTool === 'training-coverage-map'"
+          :active="!routeBlocked && activeTool === 'training-coverage-map'"
+          :can-export-excel="canExportExcel"
+          :fullscreen-active="isBrowserFullscreen && activeTool === 'training-coverage-map'"
           @enter-fullscreen="enterBrowserFullscreen"
           @exit-fullscreen="exitBrowserFullscreen"
           @feature-blocked="showUnauthorizedFeature"
@@ -174,7 +177,7 @@ import LicenseCenter from './tools/LicenseCenter.vue';
 import OnlineAssessmentTool from './tools/OnlineAssessmentTool.vue';
 import OnlineBusinessTool from './tools/OnlineBusinessTool.vue';
 import ServiceQualificationMap from './tools/ServiceQualificationMap.vue';
-import TrainingCoverageMap from './tools/TrainingCoverageMap.vue';
+import TrainingCenterMap from './tools/TrainingCenterMap.vue';
 import TimeoutTicketTool from './tools/TimeoutTicketTool.vue';
 import { brandConfig } from './config/brandConfig';
 import { FEATURES, hasFeature, hasToolAccess, isLicenseExpired, toolFeatureLabel } from './utils/licenseFeatures';
@@ -185,6 +188,7 @@ const DISCLAIMER_VERSION = '1.0';
 const sidebarCollapsed = ref(false);
 const activeTool = ref('home');
 const serviceQualificationMapMounted = ref(false);
+const trainingMapMounted = ref(false);
 const runtimeStatus = ref('系统就绪');
 const logs = ref(['平台初始化完成，等待工具操作']);
 const isAuthenticated = ref(false);
@@ -224,6 +228,9 @@ watch(
   (toolKey) => {
     if (toolKey === 'service-qualification-map') {
       serviceQualificationMapMounted.value = true;
+    }
+    if (toolKey === 'training-coverage-map') {
+      trainingMapMounted.value = true;
     }
     if (isBrowserFullscreen.value && !fullscreenToolKeys.has(toolKey)) {
       exitBrowserFullscreen();
