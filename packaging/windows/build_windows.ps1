@@ -194,22 +194,22 @@ try {
     Write-Info "Log file: $LogFile"
     Write-Info "Build cache: $SafeBuildRoot"
 
-    if (!(Test-Path (Join-Path $FrontendDist 'index.html'))) {
-        Write-Info 'frontend/dist not found. Building frontend...'
-        $FrontendDir = Join-Path $Root 'frontend'
-        $FrontendNodeModules = Join-Path $FrontendDir 'node_modules'
-        $FrontendLockfile = Join-Path $FrontendDir 'package-lock.json'
+    Write-Info 'Building frontend before packaging...'
+    $FrontendDir = Join-Path $Root 'frontend'
+    $FrontendNodeModules = Join-Path $FrontendDir 'node_modules'
+    $FrontendLockfile = Join-Path $FrontendDir 'package-lock.json'
 
-        New-Item -ItemType Directory -Force -Path $NpmCacheDir | Out-Null
-        $env:npm_config_cache = $NpmCacheDir
-        $env:npm_config_fund = 'false'
-        $env:npm_config_audit = 'false'
-        $env:npm_config_progress = 'false'
-        $env:npm_config_update_notifier = 'false'
-        $env:npm_config_registry = 'https://registry.npmmirror.com/'
+    New-Item -ItemType Directory -Force -Path $NpmCacheDir | Out-Null
+    $env:npm_config_cache = $NpmCacheDir
+    $env:npm_config_fund = 'false'
+    $env:npm_config_audit = 'false'
+    $env:npm_config_progress = 'false'
+    $env:npm_config_update_notifier = 'false'
+    $env:npm_config_registry = 'https://registry.npmmirror.com/'
 
-        Repair-FrontendNpmRc $FrontendDir
+    Repair-FrontendNpmRc $FrontendDir
 
+    if (!(Test-Path $FrontendNodeModules)) {
         $InstallSucceeded = $false
         try {
             if (Test-Path $FrontendLockfile) {
@@ -234,8 +234,15 @@ try {
         if (-not $InstallSucceeded) {
             throw 'Frontend dependency installation failed.'
         }
+    } else {
+        Write-Info 'frontend/node_modules found. Skipping dependency install.'
+    }
 
-        Invoke-NpmCommand 'Running npm run build...' @('run', 'build', '--registry', 'https://registry.npmmirror.com/') $FrontendDir
+    Remove-PathIfExists $FrontendDist
+    Invoke-NpmCommand 'Running npm run build...' @('run', 'build', '--registry', 'https://registry.npmmirror.com/') $FrontendDir
+
+    if (!(Test-Path (Join-Path $FrontendDist 'index.html'))) {
+        throw "Frontend build did not create expected file: $(Join-Path $FrontendDist 'index.html')"
     }
 
     $Candidate = Get-CompatiblePython 'py' @('-3.12')

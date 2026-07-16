@@ -102,10 +102,11 @@ export async function parseTrainingConstructionFiles(fileList, options = {}) {
     }));
   }
 
-  const dedupedRecords = dedupeCenterCourseRecords(records);
+  const dedupedRecords = dedupeCenterCourseRecords(records, validation);
   if (!dedupedRecords.length) {
     throw new Error('导入失败：未识别到可展示的培训中心承接关系。');
   }
+  inspectDedupedRecords(dedupedRecords, validation);
 
   onProgress?.({ step: 'read', status: 'completed', progress: 20, message: 'Excel 文件读取完成' });
   onProgress?.({ step: 'structure', status: 'completed', progress: 42, message: '表格结构识别完成' });
@@ -137,6 +138,12 @@ function parseCourseStandardSheet(worksheet, fileName, validation) {
     if (!courseName) continue;
     const normalizedCourse = normalizeCourseName(courseName);
     const productLine = normalizeProductLine(readCellValue(row, columnIndexMap.productLine));
+    if (metaMap[normalizedCourse]) {
+      validation.duplicateStandardCourses.add(courseName);
+    }
+    if (!productLine) {
+      validation.standardCoursesMissingProductLine.add(courseName);
+    }
     if (productLine) {
       lineMap[normalizedCourse] = productLine;
     }
@@ -172,11 +179,21 @@ function parseBaseCenterSheet(worksheet, fileName, validation) {
     const centerName = readCellValue(row, columnIndexMap.centerName);
     if (!centerName) continue;
     const address = readCellValue(row, columnIndexMap.address);
+    const normalizedCenter = normalizeCenterName(centerName);
+    if (centerMap.has(normalizedCenter)) {
+      validation.duplicateBaseCenters.add(centerName);
+    }
+    if (!address) {
+      validation.baseCentersMissingAddress.add(centerName);
+    }
     const location = resolveTrainingCenterLocation({
       address,
       city: readCellValue(row, columnIndexMap.branch),
       centerName
     });
+    if (!location.coords) {
+      validation.baseCentersUnmatchedLocation.add(centerName);
+    }
     const baseCenter = {
       centerName,
       centerType: '渠道',
@@ -197,7 +214,7 @@ function parseBaseCenterSheet(worksheet, fileName, validation) {
       sourceSheet: SHEET_NAMES.base,
       sourceRow: rowIndex + 1
     };
-    centerMap.set(normalizeCenterName(centerName), baseCenter);
+    centerMap.set(normalizedCenter, baseCenter);
   }
   validation.baseCenterCount = centerMap.size;
   return centerMap;
@@ -219,6 +236,9 @@ function parseInternalSheet(worksheet, { fileName, courseCatalog, validation }) 
     });
     internalCourses.forEach((courseName, courseIndex) => {
       const courseMeta = resolveCourseMeta(courseName, courseCatalog, validation);
+      if (!courseMeta.standardCourseKey) {
+        validation.internalNonStandardCourses.add(courseName);
+      }
       records.push({
         id: `${fileName}-${SHEET_NAMES.internal}-${center.name}-${courseIndex + 1}`,
         centerName: center.name,
@@ -238,6 +258,8 @@ function parseInternalSheet(worksheet, { fileName, courseCatalog, validation }) 
         geoSource: location.geoSource,
         courseName,
         courseKey: normalizeCourseName(courseName),
+        standardCourseKey: courseMeta.standardCourseKey,
+        standardCourseName: courseMeta.standardCourseName,
         productLine: courseMeta.productLine,
         productLineSource: courseMeta.source,
         subProductLine: courseMeta.subProductLine,
@@ -267,6 +289,9 @@ function parseChannelSheet(worksheet, { fileName, baseCenters, courseCatalog, va
     .map((header, index) => ({ header: normalizeHeaderText(header), index }))
     .filter(({ header }) => header.includes('课程讲师') || header.includes('渠道讲师'))
     .map(({ index }) => index);
+  if (!teacherIndexes.length) {
+    validation.teacherColumnMissing = true;
+  }
 
   const records = [];
   for (let rowIndex = headerRowIndex + 1; rowIndex < matrix.length; rowIndex += 1) {
@@ -274,7 +299,11 @@ function parseChannelSheet(worksheet, { fileName, baseCenters, courseCatalog, va
     if (isBlankRow(row)) continue;
     const centerName = readCellValue(row, columnIndexMap.centerName);
     const courseName = readCellValue(row, columnIndexMap.courseName);
-    if (!centerName || !courseName) continue;
+    if (!centerName || !courseName) {
+      validation.channelRowsMissingRequiredFields += 1;
+      pushExample(validation.channelRowsMissingRequiredExamples, `第 ${rowIndex + 1} 行缺少${!centerName ? '培训中心' : ''}${!centerName && !courseName ? '和' : ''}${!courseName ? '课程' : ''}`);
+      continue;
+    }
 
     const baseCenter = baseCenters.get(normalizeCenterName(centerName));
     if (!baseCenter) {
@@ -295,11 +324,16 @@ function parseChannelSheet(worksheet, { fileName, baseCenters, courseCatalog, va
     }
 
     const courseMeta = resolveCourseMeta(courseName, courseCatalog, validation);
+    if (!courseMeta.standardCourseKey) {
+      validation.channelNonStandardCourses.add(courseName);
+    }
     records.push({
       id: `${fileName}-${SHEET_NAMES.channel}-${rowIndex + 1}`,
       ...baseCenter,
       courseName,
       courseKey: normalizeCourseName(courseName),
+      standardCourseKey: courseMeta.standardCourseKey,
+      standardCourseName: courseMeta.standardCourseName,
       productLine: courseMeta.productLine,
       productLineSource: courseMeta.source,
       subProductLine: courseMeta.subProductLine,
@@ -327,6 +361,8 @@ function resolveCourseMeta(courseName, courseCatalog, validation) {
     validation.unmatchedLineCourses.add(courseName);
   }
   return {
+    standardCourseKey: standardMeta ? courseKey : '',
+    standardCourseName: standardMeta?.courseName || '',
     productLine: lineResult.productLine,
     source: lineResult.source,
     subProductLine: standardMeta?.subProductLine || '',
@@ -336,11 +372,15 @@ function resolveCourseMeta(courseName, courseCatalog, validation) {
   };
 }
 
-function dedupeCenterCourseRecords(records) {
+function dedupeCenterCourseRecords(records, validation) {
   const recordMap = new Map();
   records.forEach((record) => {
     const key = `${normalizeCenterName(record.centerName)}|${record.courseKey}`;
-    if (recordMap.has(key)) return;
+    if (recordMap.has(key)) {
+      validation.duplicateCenterCourseRows += 1;
+      pushExample(validation.duplicateCenterCourseExamples, `${record.centerName}｜${record.courseName}`);
+      return;
+    }
     recordMap.set(key, record);
   });
   return [...recordMap.values()];
@@ -351,11 +391,26 @@ function createValidationState() {
     baseCenterCount: 0,
     courseCatalogCount: 0,
     internalCourseCount: 0,
+    rawCourseNameCount: 0,
+    standardMatchedCourseCount: 0,
     missingBaseCenters: new Set(),
     unmatchedAddressCenters: new Set(),
     unmatchedLineCourses: new Set(),
     localLineMappedCourses: new Set(),
-    missingTeacherRows: 0
+    missingTeacherRows: 0,
+    duplicateStandardCourses: new Set(),
+    standardCoursesMissingProductLine: new Set(),
+    duplicateBaseCenters: new Set(),
+    baseCentersMissingAddress: new Set(),
+    baseCentersUnmatchedLocation: new Set(),
+    internalNonStandardCourses: new Set(),
+    channelNonStandardCourses: new Set(),
+    nonStandardCourses: new Set(),
+    teacherColumnMissing: false,
+    channelRowsMissingRequiredFields: 0,
+    channelRowsMissingRequiredExamples: [],
+    duplicateCenterCourseRows: 0,
+    duplicateCenterCourseExamples: []
   };
 }
 
@@ -364,16 +419,77 @@ function finalizeValidation(validation) {
     baseCenterCount: validation.baseCenterCount,
     courseCatalogCount: validation.courseCatalogCount,
     internalCourseCount: validation.internalCourseCount,
+    rawCourseNameCount: validation.rawCourseNameCount,
+    standardMatchedCourseCount: validation.standardMatchedCourseCount,
     missingBaseCenters: [...validation.missingBaseCenters],
     unmatchedAddressCenters: [...validation.unmatchedAddressCenters],
     unmatchedLineCourses: [...validation.unmatchedLineCourses],
     localLineMappedCourses: [...validation.localLineMappedCourses],
-    missingTeacherRows: validation.missingTeacherRows
+    missingTeacherRows: validation.missingTeacherRows,
+    duplicateStandardCourses: [...validation.duplicateStandardCourses],
+    standardCoursesMissingProductLine: [...validation.standardCoursesMissingProductLine],
+    duplicateBaseCenters: [...validation.duplicateBaseCenters],
+    baseCentersMissingAddress: [...validation.baseCentersMissingAddress],
+    baseCentersUnmatchedLocation: [...validation.baseCentersUnmatchedLocation],
+    internalNonStandardCourses: [...validation.internalNonStandardCourses],
+    channelNonStandardCourses: [...validation.channelNonStandardCourses],
+    nonStandardCourses: [...validation.nonStandardCourses],
+    teacherColumnMissing: validation.teacherColumnMissing,
+    channelRowsMissingRequiredFields: validation.channelRowsMissingRequiredFields,
+    channelRowsMissingRequiredExamples: validation.channelRowsMissingRequiredExamples,
+    duplicateCenterCourseRows: validation.duplicateCenterCourseRows,
+    duplicateCenterCourseExamples: validation.duplicateCenterCourseExamples
   };
+}
+
+function inspectDedupedRecords(records, validation) {
+  const rawCourseNames = new Set();
+  const standardCourseKeys = new Set();
+  const nonStandardCourses = new Set();
+
+  records.forEach((record) => {
+    if (record.courseName) rawCourseNames.add(record.courseName);
+    if (record.standardCourseKey) {
+      standardCourseKeys.add(record.standardCourseKey);
+    } else if (record.courseName) {
+      nonStandardCourses.add(record.courseName);
+    }
+  });
+
+  validation.rawCourseNameCount = rawCourseNames.size;
+  validation.standardMatchedCourseCount = standardCourseKeys.size;
+  validation.nonStandardCourses = nonStandardCourses;
 }
 
 function buildWarnings(validation) {
   const warnings = [];
+  if (validation.rawCourseNameCount > validation.courseCatalogCount) {
+    warnings.push(`原始承接课程名去重 ${validation.rawCourseNameCount} 门，大于课程标准 ${validation.courseCatalogCount} 门；顶部「覆盖标准课程」仅统计命中标准课表的 ${validation.standardMatchedCourseCount} 门。`);
+  }
+  if (validation.nonStandardCourses.size) {
+    warnings.push(`有 ${validation.nonStandardCourses.size} 门承接课程未命中课程标准，未计入「覆盖标准课程」。示例：${[...validation.nonStandardCourses].slice(0, 8).join('、')}`);
+  }
+  if (validation.duplicateCenterCourseRows) {
+    warnings.push(`已跳过 ${validation.duplicateCenterCourseRows} 条重复中心-课程承接关系，避免重复计数。示例：${validation.duplicateCenterCourseExamples.slice(0, 5).join('、')}`);
+  }
+  if (validation.channelRowsMissingRequiredFields) {
+    warnings.push(`渠道承接方案中有 ${validation.channelRowsMissingRequiredFields} 行缺少培训中心或课程，已跳过。示例：${validation.channelRowsMissingRequiredExamples.slice(0, 5).join('、')}`);
+  }
+  if (validation.duplicateStandardCourses.size) {
+    warnings.push(`课程标准中存在 ${validation.duplicateStandardCourses.size} 门重复课程名，后出现的记录会覆盖前面的同名标准。示例：${[...validation.duplicateStandardCourses].slice(0, 5).join('、')}`);
+  }
+  if (validation.standardCoursesMissingProductLine.size) {
+    warnings.push(`课程标准中有 ${validation.standardCoursesMissingProductLine.size} 门课程缺少或无法识别主产线。示例：${[...validation.standardCoursesMissingProductLine].slice(0, 5).join('、')}`);
+  }
+  if (validation.duplicateBaseCenters.size) {
+    warnings.push(`基础信息表中存在 ${validation.duplicateBaseCenters.size} 个重复培训中心名称，后出现的基础信息会覆盖前面的同名记录。示例：${[...validation.duplicateBaseCenters].slice(0, 5).join('、')}`);
+  }
+  if (validation.baseCentersMissingAddress.size) {
+    warnings.push(`基础信息表中有 ${validation.baseCentersMissingAddress.size} 个培训中心缺少地址，可能无法在离线地图定位。示例：${[...validation.baseCentersMissingAddress].slice(0, 5).join('、')}`);
+  }
+  if (validation.baseCentersUnmatchedLocation.size) {
+    warnings.push(`基础信息表中有 ${validation.baseCentersUnmatchedLocation.size} 个培训中心无法通过地址/城市/名称匹配离线地图。示例：${[...validation.baseCentersUnmatchedLocation].slice(0, 5).join('、')}`);
+  }
   if (validation.missingBaseCenters.size) {
     warnings.push(`未纳入展示 ${validation.missingBaseCenters.size} 个渠道培训中心：渠道方案中存在，但基础信息表未维护。示例：${[...validation.missingBaseCenters].slice(0, 5).join('、')}`);
   }
@@ -385,6 +501,12 @@ function buildWarnings(validation) {
   }
   if (validation.localLineMappedCourses.size) {
     warnings.push(`有 ${validation.localLineMappedCourses.size} 门课程使用本地补充产线映射。示例：${[...validation.localLineMappedCourses].slice(0, 5).join('、')}`);
+  }
+  if (validation.teacherColumnMissing) {
+    warnings.push('渠道承接方案中未识别到课程讲师/渠道讲师列，讲师相关统计可能为空。');
+  }
+  if (validation.missingTeacherRows) {
+    warnings.push(`有 ${validation.missingTeacherRows} 条渠道承接关系未维护讲师，中心讲师统计会低估。`);
   }
   return warnings;
 }
@@ -439,6 +561,11 @@ function splitTeacherText(value) {
     .split(/[、,，;；/]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function pushExample(target, value, limit = 10) {
+  if (!value || target.length >= limit || target.includes(value)) return;
+  target.push(value);
 }
 
 function isBlankRow(row) {

@@ -183,7 +183,7 @@
                 <button
                   v-for="(item, index) in dashboard.topCenters.slice(0, 10)"
                   :key="item.centerName"
-                  class="qualification-rank-row"
+                  class="qualification-rank-row construction-rank-row"
                   :class="{ focused: selectedCenter === item.centerName }"
                   type="button"
                   @click="openCenterDetail(item.centerName)"
@@ -215,7 +215,7 @@
                 <button
                   v-for="item in dashboard.regionDistribution"
                   :key="item.name"
-                  class="qualification-rank-row"
+                  class="qualification-rank-row construction-rank-row"
                   type="button"
                   @click="selectRegionFromSide(item.name)"
                 >
@@ -241,12 +241,32 @@
                   <strong>{{ validationSummary.courseCatalogCount }}</strong>
                 </div>
                 <div class="construction-validation-row">
+                  <span>原始课程名</span>
+                  <strong>{{ validationSummary.rawCourseNameCount }}</strong>
+                </div>
+                <div class="construction-validation-row">
+                  <span>命中标准课程</span>
+                  <strong>{{ validationSummary.standardMatchedCourseCount }}</strong>
+                </div>
+                <div class="construction-validation-row">
+                  <span>标准外课程</span>
+                  <strong>{{ validationSummary.nonStandardCourses?.length || 0 }}</strong>
+                </div>
+                <div class="construction-validation-row">
                   <span>内部承接课程</span>
                   <strong>{{ validationSummary.internalCourseCount }}</strong>
                 </div>
                 <div class="construction-validation-row">
                   <span>讲师待维护关系</span>
                   <strong>{{ validationSummary.missingTeacherRows }}</strong>
+                </div>
+                <div class="construction-validation-row">
+                  <span>重复承接跳过</span>
+                  <strong>{{ validationSummary.duplicateCenterCourseRows }}</strong>
+                </div>
+                <div class="construction-validation-row">
+                  <span>缺字段跳过行</span>
+                  <strong>{{ validationSummary.channelRowsMissingRequiredFields }}</strong>
                 </div>
                 <p v-for="warning in importWarnings" :key="warning" class="construction-validation-warning">
                   {{ warning }}
@@ -257,51 +277,6 @@
           </div>
         </section>
       </aside>
-    </section>
-
-    <section v-if="!fullscreenActive" class="glass-panel qualification-table-panel" :class="{ collapsed: !detailTableExpanded }">
-      <div class="panel-title-row">
-        <div>
-          <p class="section-kicker">Construction Detail</p>
-          <h2>培训中心承接明细</h2>
-        </div>
-        <div class="qualification-table-actions">
-          <button class="ghost-button" type="button" @click="detailTableExpanded = !detailTableExpanded">
-            <TableProperties :size="17" />
-            <span>{{ detailTableExpanded ? '收起明细' : '展开明细' }}</span>
-          </button>
-        </div>
-      </div>
-      <div v-if="!detailTableExpanded" class="qualification-collapsed-summary">
-        当前筛选 {{ dashboard.filteredRecords.length.toLocaleString('zh-CN') }} 条中心课程关系，展开后显示前 500 条。
-      </div>
-      <div v-else-if="dashboard.previewRows.length" class="table-shell qualification-table-shell">
-        <table>
-          <thead>
-            <tr>
-              <th>培训中心</th>
-              <th>类型</th>
-              <th>大区</th>
-              <th>城市</th>
-              <th>产线</th>
-              <th>课程</th>
-              <th>讲师</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in dashboard.previewRows" :key="row.id">
-              <td>{{ row.centerName }}</td>
-              <td>{{ row.centerType }}</td>
-              <td>{{ row.mappedRegion }}</td>
-              <td>{{ row.city }}</td>
-              <td>{{ row.productLine }}</td>
-              <td>{{ row.courseName }}</td>
-              <td>{{ row.teacherText }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div v-else class="empty-panel">暂无符合条件的建设明细。</div>
     </section>
 
     <Teleport to="body">
@@ -444,7 +419,6 @@ import {
   Network,
   RotateCcw,
   Search,
-  TableProperties,
   Upload,
   Users,
   X
@@ -494,7 +468,6 @@ const validationSummary = ref(createEmptyValidationSummary());
 const fullscreenFiltersOpen = ref(false);
 const selectedCenter = ref('');
 const activeSideTab = ref('center');
-const detailTableExpanded = ref(false);
 const filterValidationMessage = ref('');
 const activeExportKey = ref('');
 const importOverlay = reactive(createImportOverlayState());
@@ -525,7 +498,7 @@ const metricCards = computed(() => [
   { key: 'totalCenters', label: '培训中心数', value: dashboard.value.summary.totalCenters, icon: Building2, tone: 'blue' },
   { key: 'internalCenters', label: '内部中心', value: dashboard.value.summary.internalCenters, icon: MapPinned, tone: 'cyan' },
   { key: 'channelCenters', label: '渠道中心', value: dashboard.value.summary.channelCenters, icon: Network, tone: 'green' },
-  { key: 'coveredCourses', label: '覆盖课程', value: dashboard.value.summary.coveredCourses, icon: BookOpenCheck, tone: 'orange' },
+  { key: 'coveredCourses', label: '覆盖标准课程', value: dashboard.value.summary.coveredCourses, icon: BookOpenCheck, tone: 'orange' },
   { key: 'relations', label: '承接关系', value: dashboard.value.summary.centerCourseRelations, icon: Layers3, tone: 'green' }
 ]);
 
@@ -599,7 +572,7 @@ async function handleFileImport(event) {
     }), 700);
     importedRecords.value = result.records;
     importWarnings.value = result.warnings || [];
-    validationSummary.value = result.validation || createEmptyValidationSummary();
+    validationSummary.value = normalizeValidationSummary(result.validation);
     resetFiltersToAll();
     await saveToolDataset(LOCAL_DATASET_KEYS.TRAINING_CONSTRUCTION_MAP, {
       records: result.records,
@@ -782,7 +755,7 @@ async function loadLastDataset() {
     if (!record?.payload?.records?.length) return;
     importedRecords.value = record.payload.records;
     importWarnings.value = record.payload.warnings || [];
-    validationSummary.value = record.payload.validation || createEmptyValidationSummary();
+    validationSummary.value = normalizeValidationSummary(record.payload.validation);
     resetFiltersToAll();
     emit('log', `已加载上次培训中心建设地图数据，共 ${importedRecords.value.length} 条`);
   } catch (error) {
@@ -803,11 +776,33 @@ function createEmptyValidationSummary() {
     baseCenterCount: 0,
     courseCatalogCount: 0,
     internalCourseCount: 0,
+    rawCourseNameCount: 0,
+    standardMatchedCourseCount: 0,
     missingBaseCenters: [],
     unmatchedAddressCenters: [],
     unmatchedLineCourses: [],
     localLineMappedCourses: [],
-    missingTeacherRows: 0
+    missingTeacherRows: 0,
+    duplicateStandardCourses: [],
+    standardCoursesMissingProductLine: [],
+    duplicateBaseCenters: [],
+    baseCentersMissingAddress: [],
+    baseCentersUnmatchedLocation: [],
+    internalNonStandardCourses: [],
+    channelNonStandardCourses: [],
+    nonStandardCourses: [],
+    teacherColumnMissing: false,
+    channelRowsMissingRequiredFields: 0,
+    channelRowsMissingRequiredExamples: [],
+    duplicateCenterCourseRows: 0,
+    duplicateCenterCourseExamples: []
+  };
+}
+
+function normalizeValidationSummary(summary = {}) {
+  return {
+    ...createEmptyValidationSummary(),
+    ...(summary || {})
   };
 }
 

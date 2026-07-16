@@ -4412,9 +4412,50 @@ tr:hover td {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.construction-rank-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) max-content;
+  align-items: center;
+  min-height: 52px;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.construction-rank-row > span {
+  color: #dcecff;
+  font-size: 16px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.construction-rank-row > strong {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  color: #eef7ff;
+  font-size: 15px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.construction-rank-row > em {
+  display: inline-flex;
+  min-width: 44px;
+  justify-content: flex-end;
+  color: #e9f6ff;
+  font-size: 15px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .construction-validation-list {
   display: grid;
   gap: 10px;
+  max-height: 820px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .construction-validation-row {

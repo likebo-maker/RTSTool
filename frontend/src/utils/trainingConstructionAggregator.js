@@ -13,6 +13,8 @@ export const TRAINING_CONSTRUCTION_FILTER_FIELDS = {
   courses: 'courseName'
 };
 
+const STANDARD_COURSE_SOURCE = '课程标准-国内';
+
 export const TRAINING_CONSTRUCTION_FILTER_KEYS = Object.keys(TRAINING_CONSTRUCTION_FILTER_FIELDS);
 
 export function collectTrainingConstructionOptions(records) {
@@ -70,7 +72,7 @@ export function buildTrainingConstructionDashboard(records, filters = DEFAULT_TR
       totalCenters: centerStats.length,
       internalCenters: internalCenterStats.length,
       channelCenters: channelCenterStats.length,
-      coveredCourses: uniqueValues(filteredRecords.map((record) => record.courseName)).length,
+      coveredCourses: countCoveredStandardCourses(filteredRecords),
       centerCourseRelations: filteredRecords.length,
       missingTeacherCourses: filteredRecords.filter((record) => !record.teachers?.length).length
     },
@@ -152,6 +154,17 @@ function matchesMultiSelect(value, selectedValues) {
   if (!Array.isArray(selectedValues)) return true;
   if (!selectedValues.length) return false;
   return selectedValues.includes(value);
+}
+
+function countCoveredStandardCourses(records) {
+  return uniqueValues(records.map(getStandardCourseKey).filter(Boolean)).length;
+}
+
+function getStandardCourseKey(record) {
+  if (!record) return '';
+  if (record.standardCourseKey) return record.standardCourseKey;
+  if (record.productLineSource === STANDARD_COURSE_SOURCE) return record.courseKey || record.courseName || '';
+  return '';
 }
 
 function buildCenterStat(centerName, records) {
