@@ -8,7 +8,7 @@
             <CircleAlert v-else :size="22" />
           </div>
           <div>
-            <p class="section-kicker">Import Progress</p>
+            <p class="section-kicker">{{ kicker }}</p>
             <h2>{{ resolvedTitle }}</h2>
             <p>{{ resolvedSubtitle }}</p>
           </div>
@@ -16,7 +16,7 @@
 
         <div class="qualification-import-progress">
           <div class="qualification-import-progress-top">
-            <span>解析进度</span>
+            <span>{{ progressLabel }}</span>
             <strong>{{ normalizedProgress }}%</strong>
           </div>
           <div class="qualification-import-progress-track">
@@ -45,10 +45,10 @@
 
         <div v-if="mode === 'error'" class="qualification-import-actions">
           <button class="primary-button" type="button" @click="$emit('retry')">
-            重新导入
+            {{ retryLabel }}
           </button>
           <button class="ghost-button" type="button" @click="$emit('close')">
-            关闭
+            {{ closeLabel }}
           </button>
         </div>
       </section>
@@ -96,6 +96,74 @@ const props = defineProps({
   errorMessage: {
     type: String,
     default: ''
+  },
+  kicker: {
+    type: String,
+    default: 'Import Progress'
+  },
+  progressLabel: {
+    type: String,
+    default: '解析进度'
+  },
+  defaultTitle: {
+    type: String,
+    default: '正在导入服务资质数据'
+  },
+  defaultSubtitle: {
+    type: String,
+    default: '系统正在解析 Excel、清洗字段并生成地图数据，请稍候...'
+  },
+  defaultMessage: {
+    type: String,
+    default: '正在准备导入...'
+  },
+  successTitle: {
+    type: String,
+    default: '导入完成'
+  },
+  successSubtitle: {
+    type: String,
+    default: '资质数据已完成解析，正在刷新地图与统计结果。'
+  },
+  successMessage: {
+    type: String,
+    default: '地图、统计卡片、排行与图表数据已更新。'
+  },
+  defaultErrorTitle: {
+    type: String,
+    default: '导入失败'
+  },
+  defaultErrorSubtitle: {
+    type: String,
+    default: '请检查 Excel 表头和字段结构后重试。'
+  },
+  defaultErrorMessage: {
+    type: String,
+    default: '请检查 Excel 表头是否正确。'
+  },
+  pendingLabel: {
+    type: String,
+    default: '等待中'
+  },
+  processingLabel: {
+    type: String,
+    default: '处理中'
+  },
+  completedLabel: {
+    type: String,
+    default: '已完成'
+  },
+  failedLabel: {
+    type: String,
+    default: '失败'
+  },
+  retryLabel: {
+    type: String,
+    default: '重新导入'
+  },
+  closeLabel: {
+    type: String,
+    default: '关闭'
   }
 });
 
@@ -103,25 +171,25 @@ defineEmits(['retry', 'close']);
 
 const normalizedProgress = computed(() => Math.max(0, Math.min(100, Math.round(props.progress || 0))));
 const resolvedTitle = computed(() => {
-  if (props.mode === 'error') return props.errorTitle || '导入失败';
-  if (props.mode === 'success') return '导入完成';
-  return props.title || '正在导入服务资质数据';
+  if (props.mode === 'error') return props.errorTitle || props.defaultErrorTitle;
+  if (props.mode === 'success') return props.successTitle;
+  return props.title || props.defaultTitle;
 });
 const resolvedSubtitle = computed(() => {
-  if (props.mode === 'error') return props.errorMessage || '请检查 Excel 表头和字段结构后重试。';
-  if (props.mode === 'success') return '资质数据已完成解析，正在刷新地图与统计结果。';
-  return props.subtitle || '系统正在解析 Excel、清洗字段并生成地图数据，请稍候...';
+  if (props.mode === 'error') return props.errorMessage || props.defaultErrorSubtitle;
+  if (props.mode === 'success') return props.successSubtitle;
+  return props.subtitle || props.defaultSubtitle;
 });
 const resolvedMessage = computed(() => {
-  if (props.mode === 'error') return props.errorMessage || '请检查 Excel 表头是否正确。';
-  if (props.mode === 'success') return '地图、统计卡片、排行与图表数据已更新。';
-  return props.message || '正在准备导入...';
+  if (props.mode === 'error') return props.errorMessage || props.defaultErrorMessage;
+  if (props.mode === 'success') return props.successMessage;
+  return props.message || props.defaultMessage;
 });
 
 function resolveStatusText(status) {
-  if (status === 'completed') return '已完成';
-  if (status === 'processing') return '处理中';
-  if (status === 'failed') return '失败';
-  return '等待中';
+  if (status === 'completed') return props.completedLabel;
+  if (status === 'processing') return props.processingLabel;
+  if (status === 'failed') return props.failedLabel;
+  return props.pendingLabel;
 }
 </script>

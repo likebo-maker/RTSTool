@@ -11,6 +11,7 @@ export const LOCAL_DATASET_KEYS = {
   ONLINE_SERVICE_TARGET: 'online_service_target',
   ONLINE_SERVICE_ASSESSMENT: 'online_service_assessment',
   SERVICE_QUALIFICATION_MAP: 'service_qualification_map',
+  INTERNATIONAL_SERVICE_QUALIFICATION_MAP: 'international_service_qualification_map',
   TRAINING_COVERAGE_MAP: 'training_coverage_map',
   TRAINING_CONSTRUCTION_MAP: 'training_construction_map'
 };
@@ -53,7 +54,6 @@ async function saveDatasetToBrowser(toolKey, record) {
   try {
     await openDatasetDb();
     await runStoreRequest('readwrite', (store) => store.put(record));
-    saveDatasetToLocalStorage(toolKey, record);
     return true;
   } catch (error) {
     console.warn(`IndexedDB 保存失败，降级到 localStorage：${toolKey}`, error);

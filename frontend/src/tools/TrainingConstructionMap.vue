@@ -38,6 +38,18 @@
           <Download v-else :size="18" />
           <span>导出当前结果</span>
         </button>
+        <button
+          class="ghost-button"
+          :class="{ locked: !canExportExcel }"
+          type="button"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dirtyRows.length)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : !dirtyRows.length ? '暂无可导出的脏数据，请重新导入建设表生成明细' : ''"
+          @click="exportDirtyData"
+        >
+          <LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="18" />
+          <Download v-else :size="18" />
+          <span>导出脏数据</span>
+        </button>
         <button class="ghost-button" type="button" :disabled="interactionDisabled" @click="resetFilters">
           <RotateCcw :size="18" />
           <span>重置筛选</span>
@@ -78,6 +90,18 @@
           <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="16" />
           <Download v-else :size="16" />
           <span>导出</span>
+        </button>
+        <button
+          class="ghost-button compact"
+          :class="{ locked: !canExportExcel }"
+          type="button"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dirtyRows.length)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : !dirtyRows.length ? '暂无可导出的脏数据，请重新导入建设表生成明细' : ''"
+          @click="exportDirtyData"
+        >
+          <LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="16" />
+          <Download v-else :size="16" />
+          <span>脏数据</span>
         </button>
         <button class="ghost-button compact" :class="{ active: fullscreenFiltersOpen }" type="button" @click="fullscreenFiltersOpen = !fullscreenFiltersOpen">
           <Search :size="16" />
@@ -265,6 +289,10 @@
                   <strong>{{ validationSummary.duplicateCenterCourseRows }}</strong>
                 </div>
                 <div class="construction-validation-row">
+                  <span>脏数据明细</span>
+                  <strong>{{ dirtyRows.length }}</strong>
+                </div>
+                <div class="construction-validation-row">
                   <span>缺字段跳过行</span>
                   <strong>{{ validationSummary.channelRowsMissingRequiredFields }}</strong>
                 </div>
@@ -439,7 +467,11 @@ import {
   DEFAULT_TRAINING_CONSTRUCTION_FILTERS,
   TRAINING_CONSTRUCTION_FILTER_KEYS
 } from '../utils/trainingConstructionAggregator';
-import { exportTrainingConstructionCenterRecords, exportTrainingConstructionRecords } from '../utils/exportTrainingExcel';
+import {
+  exportTrainingConstructionCenterRecords,
+  exportTrainingConstructionDirtyRecords,
+  exportTrainingConstructionRecords
+} from '../utils/exportTrainingExcel';
 import { parseTrainingConstructionFiles } from '../utils/trainingConstructionParser';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
@@ -463,6 +495,7 @@ const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-full
 const fileInputRef = ref(null);
 const loading = ref(false);
 const importedRecords = ref([]);
+const dirtyRows = ref([]);
 const importWarnings = ref([]);
 const validationSummary = ref(createEmptyValidationSummary());
 const fullscreenFiltersOpen = ref(false);
@@ -571,11 +604,13 @@ async function handleFileImport(event) {
       onProgress: updateImportProgress
     }), 700);
     importedRecords.value = result.records;
+    dirtyRows.value = result.dirtyRows || [];
     importWarnings.value = result.warnings || [];
     validationSummary.value = normalizeValidationSummary(result.validation);
     resetFiltersToAll();
     await saveToolDataset(LOCAL_DATASET_KEYS.TRAINING_CONSTRUCTION_MAP, {
       records: result.records,
+      dirtyRows: result.dirtyRows || [],
       warnings: result.warnings || [],
       validation: result.validation || createEmptyValidationSummary(),
       sourceFiles: files.map((file) => file.name),
@@ -736,6 +771,18 @@ async function exportCenterDetail() {
   });
 }
 
+async function exportDirtyData() {
+  if (!props.canExportExcel) {
+    emit('feature-blocked', 'Excel导出');
+    return;
+  }
+  if (!dirtyRows.value.length || activeExportKey.value) return;
+  await runExportFeedback('dirty', '系统正在生成培训中心建设脏数据 Excel，请不要重复点击导出按钮。', () => {
+    exportTrainingConstructionDirtyRecords(dirtyRows.value);
+    emit('log', `已导出培训中心建设脏数据，共 ${dirtyRows.value.length} 条`);
+  });
+}
+
 async function runExportFeedback(key, message, action) {
   if (activeExportKey.value) return;
   activeExportKey.value = key;
@@ -754,6 +801,7 @@ async function loadLastDataset() {
     const record = await loadToolDataset(LOCAL_DATASET_KEYS.TRAINING_CONSTRUCTION_MAP);
     if (!record?.payload?.records?.length) return;
     importedRecords.value = record.payload.records;
+    dirtyRows.value = record.payload.dirtyRows || [];
     importWarnings.value = record.payload.warnings || [];
     validationSummary.value = normalizeValidationSummary(record.payload.validation);
     resetFiltersToAll();
@@ -795,7 +843,8 @@ function createEmptyValidationSummary() {
     channelRowsMissingRequiredFields: 0,
     channelRowsMissingRequiredExamples: [],
     duplicateCenterCourseRows: 0,
-    duplicateCenterCourseExamples: []
+    duplicateCenterCourseExamples: [],
+    dirtyRowCount: 0
   };
 }
 

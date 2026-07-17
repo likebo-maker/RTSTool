@@ -11,6 +11,12 @@ const TONE_COLORS = {
   info: '#38bdf8'
 };
 
+export const MAP_POINT_SYMBOL_SIZE = {
+  normal: 18,
+  selected: 22,
+  focused: 26
+};
+
 export function initOfflineChinaMap(element) {
   registerOfflineChinaMap();
   return echarts.init(element);
@@ -109,11 +115,9 @@ export function buildOfflineChinaMapOption({
         data: mapPoints,
         symbol: 'circle',
         symbolSize(value, params) {
-          const metric = Number(params.data?.metric || value?.[2] || 0);
-          const baseSize = Math.min(24, Math.max(10, 8 + Math.log10(metric + 10) * 4));
-          if (params.data?.isFocused) return baseSize + 8;
-          if (params.data?.isSelected) return baseSize + 5;
-          return baseSize;
+          if (params.data?.isFocused) return MAP_POINT_SYMBOL_SIZE.focused;
+          if (params.data?.isSelected) return MAP_POINT_SYMBOL_SIZE.selected;
+          return MAP_POINT_SYMBOL_SIZE.normal;
         },
         rippleEffect: {
           brushType: 'stroke',
@@ -132,7 +136,7 @@ export function buildOfflineChinaMapOption({
           }
         },
         label: {
-          show: true,
+          show: false,
           formatter(params) {
             return params.data?.labelText || '';
           },
@@ -141,19 +145,12 @@ export function buildOfflineChinaMapOption({
           color: '#f7fbff',
           fontSize: 12,
           fontWeight: 800,
-          lineHeight: 17,
-          backgroundColor: 'rgba(5, 18, 34, 0.86)',
-          borderColor: 'rgba(103, 232, 255, 0.56)',
-          borderWidth: 1,
-          borderRadius: 8,
-          padding: [7, 10],
-          shadowBlur: 18,
-          shadowColor: 'rgba(0, 212, 255, 0.22)'
+          lineHeight: 17
         },
         emphasis: {
           scale: 1.35,
           label: {
-            show: true
+            show: false
           }
         }
       }

@@ -3,38 +3,79 @@ import { resolveTrainingCenterGeo } from './trainingCenterMap';
 import { applyPointOffsets, geoInfoToPoint, resolveGeoFromMap } from '../services/geoCacheService';
 
 export const DEFAULT_TRAINING_FILTERS = {
-  branches: [],
   regions: [],
   productLines: [],
-  cycles: [],
-  result: '全部',
   trainingCenters: [],
-  trainingTypes: []
+  courses: []
 };
+
+export const TRAINING_DELIVERY_FILTER_FIELDS = {
+  regions: 'mappedRegion',
+  productLines: 'productLine',
+  trainingCenters: 'trainingCenter',
+  courses: 'courseName'
+};
+
+export const TRAINING_DELIVERY_FILTER_KEYS = Object.keys(TRAINING_DELIVERY_FILTER_FIELDS);
 
 export function collectTrainingOptions(records) {
   return {
-    branches: sortTextValues(uniqueValues(records.map((record) => record.branch))),
-    regions: sortTextValues(uniqueValues(records.map((record) => record.mappedRegion))),
+    regions: sortTextValues(uniqueValues(records.map((record) => record.mappedRegion)).filter((value) => value !== '未匹配大区')),
     productLines: sortTextValues(uniqueValues(records.map((record) => record.productLine))),
-    cycles: sortTextValues(uniqueValues(records.map((record) => record.trainingCycle))),
-    results: ['全部', '合格', '不合格'],
     trainingCenters: sortTextValues(uniqueValues(records.map((record) => record.trainingCenter))),
-    trainingTypes: sortTextValues(uniqueValues(records.map((record) => record.trainingType)))
+    courses: sortTextValues(uniqueValues(records.map((record) => record.courseName)))
   };
 }
 
 export function applyTrainingFilters(records, filters = DEFAULT_TRAINING_FILTERS) {
   return records.filter((record) => {
     if (!matchesMultiSelect(record.mappedRegion, filters.regions)) return false;
-    if (!matchesMultiSelect(record.branch, filters.branches)) return false;
     if (!matchesMultiSelect(record.productLine, filters.productLines)) return false;
-    if (!matchesMultiSelect(record.trainingCycle, filters.cycles)) return false;
-    if (filters.result !== '全部' && record.trainingResult !== filters.result) return false;
     if (!matchesMultiSelect(record.trainingCenter, filters.trainingCenters)) return false;
-    if (!matchesMultiSelect(record.trainingType, filters.trainingTypes)) return false;
+    if (!matchesMultiSelect(record.courseName, filters.courses)) return false;
     return true;
   });
+}
+
+export function buildTrainingDynamicOptions(records, filters, baseOptions) {
+  const selectedSets = buildSelectedFilterSets(filters, baseOptions);
+  const buckets = Object.fromEntries(TRAINING_DELIVERY_FILTER_KEYS.map((key) => [key, new Set()]));
+
+  records.forEach((record) => {
+    TRAINING_DELIVERY_FILTER_KEYS.forEach((targetKey, targetIndex) => {
+      for (const key of TRAINING_DELIVERY_FILTER_KEYS.slice(0, targetIndex)) {
+        const selectedSet = selectedSets[key];
+        if (!selectedSet?.size) continue;
+        if (!selectedSet.has(getRecordFilterValue(record, key))) {
+          return;
+        }
+      }
+      const value = getRecordFilterValue(record, targetKey);
+      if (value && value !== '未匹配大区') buckets[targetKey].add(value);
+    });
+  });
+
+  return Object.fromEntries(
+    TRAINING_DELIVERY_FILTER_KEYS.map((key) => [key, sortTextValues([...buckets[key]])])
+  );
+}
+
+export function createAllTrainingFilters(options) {
+  return {
+    regions: [...(options.regions || [])],
+    productLines: [...(options.productLines || [])],
+    trainingCenters: [...(options.trainingCenters || [])],
+    courses: [...(options.courses || [])]
+  };
+}
+
+export function cloneTrainingFilters(filters) {
+  return {
+    regions: [...(filters.regions || [])],
+    productLines: [...(filters.productLines || [])],
+    trainingCenters: [...(filters.trainingCenters || [])],
+    courses: [...(filters.courses || [])]
+  };
 }
 
 function matchesMultiSelect(value, selectedValues) {
@@ -45,7 +86,7 @@ function matchesMultiSelect(value, selectedValues) {
 
 export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTERS, geoMap = {}) {
   const filteredRecords = applyTrainingFilters(records, filters);
-  const branchMap = groupBy(filteredRecords, 'branch');
+  const branchMap = groupBy(filteredRecords, 'trainingCenter');
   const centerMap = groupBy(filteredRecords, 'trainingCenter');
   const branchStats = Object.entries(branchMap)
     .map(([branch, branchRecords]) => buildTrainingBranchStat(branch, branchRecords))
@@ -71,21 +112,36 @@ export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTE
       .sort((left, right) => right.recordCount - left.recordCount || right.traineeCount - left.traineeCount),
     riskBranches: [...branchStats]
       .sort((left, right) => right.failCount - left.failCount || left.passRateValue - right.passRateValue),
+    failRateBranches: [...branchStats]
+      .filter((item) => item.hasEffectiveResult)
+      .sort((left, right) => right.failRateValue - left.failRateValue || right.failCount - left.failCount),
+    failCountBranches: [...branchStats]
+      .sort((left, right) => right.failPersonCount - left.failPersonCount || right.failCount - left.failCount || right.failRateValue - left.failRateValue),
     productLineDistribution: aggregateSeries(filteredRecords, 'productLine'),
-    trainingTypeDistribution: aggregateSeries(filteredRecords, 'trainingType'),
+    courseDistribution: aggregateSeries(filteredRecords, 'courseName'),
+    trainingTypeDistribution: aggregateSeries(filteredRecords, 'courseName'),
     trendSeries: buildTrainingTrendSeries(filteredRecords),
     previewRows: filteredRecords.slice(0, 500)
   };
 }
 
 function buildTrainingMapPoint(item, geoMap) {
-  const cachedGeo = resolveGeoFromMap(geoMap, item.geoLocationName || item.trainingCenter);
-  const fallbackGeo = resolveTrainingCenterGeo(item.trainingCenter, item.trainingCenterCity);
-  const geo = cachedGeo
-    ? geoInfoToPoint(cachedGeo)
-    : fallbackGeo
-      ? { city: fallbackGeo.city, coords: fallbackGeo.coords, geoSource: 'local' }
-      : geoInfoToPoint(null);
+  let geo = null;
+  if (Array.isArray(item.coords) && item.coords.length >= 2) {
+    geo = {
+      city: item.city || item.trainingCenterCity || '',
+      coords: [...item.coords],
+      geoSource: item.geoSource || 'construction'
+    };
+  } else {
+    const cachedGeo = resolveGeoFromMap(geoMap, item.geoLocationName || item.trainingCenter);
+    const fallbackGeo = resolveTrainingCenterGeo(item.trainingCenter, item.trainingCenterCity);
+    geo = cachedGeo
+      ? geoInfoToPoint(cachedGeo)
+      : fallbackGeo
+        ? { city: fallbackGeo.city, coords: fallbackGeo.coords, geoSource: 'local' }
+        : geoInfoToPoint(null);
+  }
 
   return {
     ...item,
@@ -115,7 +171,8 @@ export function buildTrainingBranchDetail(branch, records, scope = 'branch') {
     fullBranchRecords: branchRecords,
     branchStat,
     productLineDistribution: aggregateSeries(branchRecords, 'productLine', 8),
-    trainingTypeDistribution: aggregateSeries(branchRecords, 'trainingType', 8),
+    courseDistribution: aggregateSeries(branchRecords, 'courseName', 8),
+    trainingTypeDistribution: aggregateSeries(branchRecords, 'courseName', 8),
     trendSeries: buildTrainingTrendSeries(branchRecords),
     recentRecords: [...branchRecords]
       .sort((left, right) => (right.trainingCycle || '').localeCompare(left.trainingCycle || '', 'zh-CN'))
@@ -128,9 +185,11 @@ function buildTrainingBranchStat(branch, records) {
   const traineeCount = countTrainees(records);
   const recordCount = records.length;
   const failCount = records.filter((record) => record.isFail).length;
+  const failPersonCount = countTrainees(records.filter((record) => record.isFail));
   const effectiveCount = records.filter((record) => record.isEffectiveResult).length;
   const passCount = records.filter((record) => record.isPass).length;
   const passRateValue = effectiveCount ? (passCount / effectiveCount) * 100 : null;
+  const failRateValue = effectiveCount ? (failCount / effectiveCount) * 100 : 0;
   return {
     branch,
     mappedRegion: records[0]?.mappedRegion || '未匹配大区',
@@ -139,9 +198,14 @@ function buildTrainingBranchStat(branch, records) {
     sessionCount: countTrainingSessions(records),
     passRate: formatPassRate(passCount, effectiveCount),
     passRateValue,
+    failRate: formatPassRate(failCount, effectiveCount),
+    failRateValue,
+    effectiveCount,
     failCount,
+    failPersonCount,
     primaryProductLines: aggregateSeries(records, 'productLine', 3).map((item) => item.name).join('、') || '暂无',
-    primaryTrainingTypes: aggregateSeries(records, 'trainingType', 3).map((item) => item.name).join('、') || '暂无',
+    primaryCourses: aggregateSeries(records, 'courseName', 3).map((item) => item.name).join('、') || '暂无',
+    primaryTrainingTypes: aggregateSeries(records, 'courseName', 3).map((item) => item.name).join('、') || '暂无',
     hasEffectiveResult: effectiveCount > 0
   };
 }
@@ -151,13 +215,20 @@ function buildTrainingCenterStat(trainingCenter, records) {
   const traineeCount = countTrainees(records);
   const recordCount = records.length;
   const failCount = records.filter((record) => record.isFail).length;
+  const failPersonCount = countTrainees(records.filter((record) => record.isFail));
   const effectiveCount = records.filter((record) => record.isEffectiveResult).length;
   const passCount = records.filter((record) => record.isPass).length;
   const passRateValue = effectiveCount ? (passCount / effectiveCount) * 100 : null;
+  const failRateValue = effectiveCount ? (failCount / effectiveCount) * 100 : 0;
   return {
     branch: trainingCenter,
     trainingCenter,
     trainingCenterCity: records[0]?.trainingCenterCity || '',
+    city: records[0]?.city || records[0]?.trainingCenterCity || '',
+    province: records[0]?.province || '',
+    centerType: records[0]?.centerType || '',
+    coords: records[0]?.coords,
+    geoSource: records[0]?.geoSource || 'construction',
     geoLocationName: records[0]?.geoLocationName || trainingCenter,
     mappedRegion: records[0]?.mappedRegion || '未匹配大区',
     traineeCount,
@@ -165,17 +236,22 @@ function buildTrainingCenterStat(trainingCenter, records) {
     sessionCount: countTrainingSessions(records),
     passRate: formatPassRate(passCount, effectiveCount),
     passRateValue,
+    failRate: formatPassRate(failCount, effectiveCount),
+    failRateValue,
+    effectiveCount,
     failCount,
+    failPersonCount,
     primaryProductLines: aggregateSeries(records, 'productLine', 3).map((item) => item.name).join('、') || '暂无',
-    primaryTrainingTypes: aggregateSeries(records, 'trainingType', 3).map((item) => item.name).join('、') || '暂无',
+    primaryCourses: aggregateSeries(records, 'courseName', 3).map((item) => item.name).join('、') || '暂无',
+    primaryTrainingTypes: aggregateSeries(records, 'courseName', 3).map((item) => item.name).join('、') || '暂无',
     hasEffectiveResult: effectiveCount > 0
   };
 }
 
 export function resolveTrainingPointTone(point, mode) {
   if (mode === 'training-count') {
-    if (point.traineeCount >= 120) return 'good';
-    if (point.traineeCount >= 60) return 'warning';
+    if (point.recordCount >= 120) return 'good';
+    if (point.recordCount >= 60) return 'warning';
     return 'info';
   }
   if (mode === 'session-count') {
@@ -248,7 +324,28 @@ function countTrainingSessions(records) {
 }
 
 function resolveTraineeKey(record) {
-  return record.studentName ? `${record.studentName}|${record.branch}|${record.studentOrg}` : '__unknown__';
+  if (record.studentAccount) return `${record.studentAccount}|${record.trainingCenter || record.branch}`;
+  return record.studentName ? `${record.studentName}|${record.trainingCenter || record.branch}|${record.studentOrg}` : '__unknown__';
+}
+
+function buildSelectedFilterSets(filters, baseOptions) {
+  return Object.fromEntries(
+    TRAINING_DELIVERY_FILTER_KEYS.map((key) => [key, buildEffectiveSelectedSet(filters[key] || [], baseOptions?.[key] || [])])
+  );
+}
+
+function buildEffectiveSelectedSet(selectedValues, baseValues) {
+  const selected = (selectedValues || []).filter(Boolean);
+  const base = (baseValues || []).filter(Boolean);
+  const baseSet = new Set(base);
+  const selectedSet = new Set(selected);
+  const allBaseSelected = base.length > 0 && base.every((value) => selectedSet.has(value));
+  if (allBaseSelected) return new Set();
+  return new Set(selected.filter((value) => baseSet.has(value)));
+}
+
+function getRecordFilterValue(record, key) {
+  return record?.[TRAINING_DELIVERY_FILTER_FIELDS[key]] || '';
 }
 
 function uniqueValues(values) {

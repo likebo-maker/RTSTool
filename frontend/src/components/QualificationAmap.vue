@@ -68,6 +68,7 @@ import * as echarts from 'echarts';
 import ChinaMapPackage from 'china-map-geojson';
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
 import { getQualificationRegionGroups } from '../utils/branchGeoMap';
+import { MAP_POINT_SYMBOL_SIZE } from '../utils/offlineChinaMap';
 
 const props = defineProps({
   points: {
@@ -281,6 +282,8 @@ function buildMapOption() {
       branch: point.branch,
       point,
       value: [Number(point.coords[0]), Number(point.coords[1]), Number(point.validQualifications || 0)],
+      isFocused: Boolean(props.focusedBranch && point.branch === props.focusedBranch),
+      isSelected: Boolean(props.selectedBranch && point.branch === props.selectedBranch),
       itemStyle: {
         color: resolveRiskColor(point.riskLevel)
       },
@@ -332,9 +335,10 @@ function buildMapOption() {
         type: 'effectScatter',
         coordinateSystem: 'geo',
         data: scatterData,
-        symbolSize: (value) => {
-          const count = Number(value?.[2] || 0);
-          return Math.max(10, Math.min(30, 9 + Math.sqrt(count) * 1.4));
+        symbolSize: (value, params) => {
+          if (params.data?.isFocused) return MAP_POINT_SYMBOL_SIZE.focused;
+          if (params.data?.isSelected) return MAP_POINT_SYMBOL_SIZE.selected;
+          return MAP_POINT_SYMBOL_SIZE.normal;
         },
         rippleEffect: {
           brushType: 'stroke',

@@ -15,7 +15,7 @@ export const FEATURE_LABELS = {
   [FEATURES.TIMEOUT_FILTER]: '超时工单筛选',
   [FEATURES.ONLINE_SERVICE_TARGET]: '在线服务项目目标',
   [FEATURES.ONLINE_SERVICE_KPI]: '在线服务考核指标',
-  [FEATURES.QUALIFICATION_MAP]: '中国区人员服务资质地图',
+  [FEATURES.QUALIFICATION_MAP]: '工程师服务资质地图',
   [FEATURES.TRAINING_MAP]: '中国区培训中心建设/交付地图',
   [FEATURES.ELEARNING_DATA]: 'E课堂数据处理',
   [FEATURES.EXPORT_EXCEL]: 'Excel导出',
@@ -40,7 +40,7 @@ export const TOOL_LABELS = {
   'timeout-ticket-filter': '超时工单筛选',
   'online-business-calculation': '在线服务项目目标',
   'online-service-assessment': '在线服务考核指标',
-  'service-qualification-map': '中国区人员服务资质地图',
+  'service-qualification-map': '工程师服务资质地图',
   'training-coverage-map': '中国区培训中心建设/交付地图',
   'eclass-data': 'E课堂数据处理'
 };

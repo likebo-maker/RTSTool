@@ -8,7 +8,7 @@
 
     <div v-if="isOpen" class="qualification-filter-dropdown">
       <div class="qualification-filter-dropdown-head">
-        <button class="ghost-button mini" type="button" @click="close">收起</button>
+        <button class="ghost-button mini" type="button" @click="close">{{ collapseLabel }}</button>
       </div>
 
       <input
@@ -27,7 +27,7 @@
             type="checkbox"
             @change="toggleAll"
           />
-          <span>全部</span>
+          <span>{{ allLabel }}</span>
           <strong>{{ normalizedOptions.length }}</strong>
         </label>
 
@@ -41,7 +41,7 @@
         </label>
 
         <div v-if="!filteredOptions.length" class="qualification-filter-empty">
-          暂无可选项
+          {{ emptyText }}
         </div>
       </div>
     </div>
@@ -76,6 +76,30 @@ const props = defineProps({
   preserveExternalValues: {
     type: Boolean,
     default: false
+  },
+  collapseLabel: {
+    type: String,
+    default: '收起'
+  },
+  allLabel: {
+    type: String,
+    default: '全部'
+  },
+  emptyText: {
+    type: String,
+    default: '暂无可选项'
+  },
+  allSelectedText: {
+    type: String,
+    default: '全部'
+  },
+  unselectedText: {
+    type: String,
+    default: '未选择'
+  },
+  multiSeparator: {
+    type: String,
+    default: '、'
   }
 });
 
@@ -103,11 +127,11 @@ const isPartiallySelected = computed(() => selectedValues.value.length > 0 && se
 
 const displayText = computed(() => {
   const values = selectedValues.value;
-  if (isAllSelected.value) return '全部';
-  if (!values.length) return '未选择';
+  if (isAllSelected.value) return props.allSelectedText;
+  if (!values.length) return props.unselectedText;
   if (values.length === 1) return values[0];
-  if (values.length === 2) return values.join('、');
-  return `${values[0]}、${values[1]} +${values.length - 2}`;
+  if (values.length === 2) return values.join(props.multiSeparator);
+  return `${values[0]}${props.multiSeparator}${values[1]} +${values.length - 2}`;
 });
 
 onMounted(() => {

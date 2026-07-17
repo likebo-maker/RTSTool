@@ -9,7 +9,7 @@
 
     <div v-if="loading" class="chart-empty-state">
       <LoaderCircle class="spin" :size="22" />
-      <span>图表加载中</span>
+      <span>{{ loadingText }}</span>
     </div>
     <div v-else-if="!hasOption" class="chart-empty-state">
       <ChartNoAxesCombined :size="24" />
@@ -24,7 +24,7 @@
     </div>
     <div v-if="loading" class="chart-empty-state inline">
       <LoaderCircle class="spin" :size="20" />
-      <span>图表加载中</span>
+      <span>{{ loadingText }}</span>
     </div>
     <div v-else-if="!hasOption" class="chart-empty-state inline">
       <ChartNoAxesCombined :size="22" />
@@ -63,6 +63,10 @@ const props = defineProps({
   loading: {
     type: Boolean,
     default: false
+  },
+  loadingText: {
+    type: String,
+    default: '图表加载中'
   },
   active: {
     type: Boolean,

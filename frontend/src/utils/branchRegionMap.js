@@ -98,5 +98,5 @@ export function resolveTrainingRegion(value) {
 }
 
 export function getTrainingRegionGroups() {
-  return TRAINING_REGION_GROUPS;
+  return TRAINING_REGION_GROUPS.filter((region) => region.name !== '华中大区');
 }

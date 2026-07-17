@@ -57,7 +57,7 @@
         </button>
         <button class="nav-item sub-item" :class="{ active: activeTool === 'service-qualification-map', locked: isLocked('service-qualification-map') }" type="button" @click="$emit('select', 'service-qualification-map')">
           <MapPinned :size="17" />
-          <span>中国区人员服务资质地图</span>
+          <span>工程师服务资质地图</span>
           <LockKeyhole v-if="isLocked('service-qualification-map')" class="nav-lock" :size="14" />
         </button>
         <button class="nav-item sub-item" :class="{ active: activeTool === 'training-coverage-map', locked: isLocked('training-coverage-map') }" type="button" @click="$emit('select', 'training-coverage-map')">

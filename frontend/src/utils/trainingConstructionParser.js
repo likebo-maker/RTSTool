@@ -117,6 +117,7 @@ export async function parseTrainingConstructionFiles(fileList, options = {}) {
     records: dedupedRecords,
     warnings: buildWarnings(validation),
     validation: finalizeValidation(validation),
+    dirtyRows: validation.dirtyRows,
     importedAt: new Date().toISOString()
   };
 }
@@ -140,9 +141,29 @@ function parseCourseStandardSheet(worksheet, fileName, validation) {
     const productLine = normalizeProductLine(readCellValue(row, columnIndexMap.productLine));
     if (metaMap[normalizedCourse]) {
       validation.duplicateStandardCourses.add(courseName);
+      pushConstructionDirtyRow(validation, {
+        category: '课程标准重复',
+        reason: `课程标准中存在重复课程名「${courseName}」，后出现的记录会覆盖前面的同名标准。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.standard,
+        sourceRow: rowIndex + 1,
+        courseName,
+        productLine,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
     }
     if (!productLine) {
       validation.standardCoursesMissingProductLine.add(courseName);
+      pushConstructionDirtyRow(validation, {
+        category: '课程标准产线缺失',
+        reason: `课程标准中课程「${courseName}」缺少或无法识别主产线。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.standard,
+        sourceRow: rowIndex + 1,
+        courseName,
+        productLine: readCellValue(row, columnIndexMap.productLine),
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
     }
     if (productLine) {
       lineMap[normalizedCourse] = productLine;
@@ -182,9 +203,27 @@ function parseBaseCenterSheet(worksheet, fileName, validation) {
     const normalizedCenter = normalizeCenterName(centerName);
     if (centerMap.has(normalizedCenter)) {
       validation.duplicateBaseCenters.add(centerName);
+      pushConstructionDirtyRow(validation, {
+        category: '基础信息培训中心重复',
+        reason: `基础信息表中存在重复培训中心名称「${centerName}」，后出现的基础信息会覆盖前面的同名记录。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.base,
+        sourceRow: rowIndex + 1,
+        centerName,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
     }
     if (!address) {
       validation.baseCentersMissingAddress.add(centerName);
+      pushConstructionDirtyRow(validation, {
+        category: '基础信息地址缺失',
+        reason: `培训中心「${centerName}」缺少培训中心地址。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.base,
+        sourceRow: rowIndex + 1,
+        centerName,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
     }
     const location = resolveTrainingCenterLocation({
       address,
@@ -193,6 +232,15 @@ function parseBaseCenterSheet(worksheet, fileName, validation) {
     });
     if (!location.coords) {
       validation.baseCentersUnmatchedLocation.add(centerName);
+      pushConstructionDirtyRow(validation, {
+        category: '基础信息地址未定位',
+        reason: `培训中心「${centerName}」无法通过地址/城市/名称匹配离线地图。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.base,
+        sourceRow: rowIndex + 1,
+        centerName,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
     }
     const baseCenter = {
       centerName,
@@ -238,6 +286,43 @@ function parseInternalSheet(worksheet, { fileName, courseCatalog, validation }) 
       const courseMeta = resolveCourseMeta(courseName, courseCatalog, validation);
       if (!courseMeta.standardCourseKey) {
         validation.internalNonStandardCourses.add(courseName);
+        pushConstructionDirtyRow(validation, {
+          category: '内部承接课程未命中标准',
+          reason: `内部承接课程「${courseName}」未命中课程标准。`,
+          sourceFile: fileName,
+          sourceSheet: SHEET_NAMES.internal,
+          sourceRow: courseIndex + 1,
+          centerName: center.name,
+          courseName,
+          productLine: courseMeta.productLine,
+          rawData: { 课程名称: courseName }
+        });
+      }
+      if (courseMeta.source === '未匹配') {
+        pushConstructionDirtyRow(validation, {
+          category: '内部承接课程产线未匹配',
+          reason: `内部承接课程「${courseName}」未匹配到 IVD/MIS/PMLS 产线。`,
+          sourceFile: fileName,
+          sourceSheet: SHEET_NAMES.internal,
+          sourceRow: courseIndex + 1,
+          centerName: center.name,
+          courseName,
+          productLine: courseMeta.productLine,
+          rawData: { 课程名称: courseName }
+        });
+      }
+      if (courseMeta.source === '本地补充配置') {
+        pushConstructionDirtyRow(validation, {
+          category: '内部承接课程使用本地产线映射',
+          reason: `内部承接课程「${courseName}」未直接命中课程标准产线，使用本地补充产线映射。`,
+          sourceFile: fileName,
+          sourceSheet: SHEET_NAMES.internal,
+          sourceRow: courseIndex + 1,
+          centerName: center.name,
+          courseName,
+          productLine: courseMeta.productLine,
+          rawData: { 课程名称: courseName }
+        });
       }
       records.push({
         id: `${fileName}-${SHEET_NAMES.internal}-${center.name}-${courseIndex + 1}`,
@@ -268,6 +353,7 @@ function parseInternalSheet(worksheet, { fileName, courseCatalog, validation }) 
         requiredModel: courseMeta.requiredModel,
         teachers: ['内部培训中心'],
         teacherText: '内部培训中心',
+        _sourceRawData: { 课程名称: courseName },
         sourceFile: fileName,
         sourceSheet: SHEET_NAMES.internal,
         sourceRow: courseIndex + 1
@@ -302,16 +388,46 @@ function parseChannelSheet(worksheet, { fileName, baseCenters, courseCatalog, va
     if (!centerName || !courseName) {
       validation.channelRowsMissingRequiredFields += 1;
       pushExample(validation.channelRowsMissingRequiredExamples, `第 ${rowIndex + 1} 行缺少${!centerName ? '培训中心' : ''}${!centerName && !courseName ? '和' : ''}${!courseName ? '课程' : ''}`);
+      pushConstructionDirtyRow(validation, {
+        category: '渠道承接必要字段缺失',
+        reason: `渠道承接方案第 ${rowIndex + 1} 行缺少${!centerName ? '培训中心' : ''}${!centerName && !courseName ? '和' : ''}${!courseName ? '课程' : ''}。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.channel,
+        sourceRow: rowIndex + 1,
+        centerName,
+        courseName,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
       continue;
     }
 
     const baseCenter = baseCenters.get(normalizeCenterName(centerName));
     if (!baseCenter) {
       validation.missingBaseCenters.add(centerName);
+      pushConstructionDirtyRow(validation, {
+        category: '渠道中心缺少基础信息',
+        reason: `渠道承接方案中存在培训中心「${centerName}」，但基础信息表未维护。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.channel,
+        sourceRow: rowIndex + 1,
+        centerName,
+        courseName,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
       continue;
     }
     if (!baseCenter.coords) {
       validation.unmatchedAddressCenters.add(centerName);
+      pushConstructionDirtyRow(validation, {
+        category: '渠道中心地址未定位',
+        reason: `培训中心「${centerName}」基础信息缺少地址或地址无法匹配离线地图，未纳入展示。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.channel,
+        sourceRow: rowIndex + 1,
+        centerName,
+        courseName,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
       continue;
     }
 
@@ -321,11 +437,58 @@ function parseChannelSheet(worksheet, { fileName, baseCenters, courseCatalog, va
       .filter(Boolean);
     if (!teachers.length) {
       validation.missingTeacherRows += 1;
+      pushConstructionDirtyRow(validation, {
+        category: '渠道讲师缺失',
+        reason: `培训中心「${centerName}」课程「${courseName}」未维护课程讲师/渠道讲师。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.channel,
+        sourceRow: rowIndex + 1,
+        centerName,
+        courseName,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
     }
 
     const courseMeta = resolveCourseMeta(courseName, courseCatalog, validation);
     if (!courseMeta.standardCourseKey) {
       validation.channelNonStandardCourses.add(courseName);
+      pushConstructionDirtyRow(validation, {
+        category: '渠道承接课程未命中标准',
+        reason: `渠道承接课程「${courseName}」未命中课程标准。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.channel,
+        sourceRow: rowIndex + 1,
+        centerName,
+        courseName,
+        productLine: courseMeta.productLine,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
+    }
+    if (courseMeta.source === '未匹配') {
+      pushConstructionDirtyRow(validation, {
+        category: '渠道承接课程产线未匹配',
+        reason: `渠道承接课程「${courseName}」未匹配到 IVD/MIS/PMLS 产线。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.channel,
+        sourceRow: rowIndex + 1,
+        centerName,
+        courseName,
+        productLine: courseMeta.productLine,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
+    }
+    if (courseMeta.source === '本地补充配置') {
+      pushConstructionDirtyRow(validation, {
+        category: '渠道承接课程使用本地产线映射',
+        reason: `渠道承接课程「${courseName}」未直接命中课程标准产线，使用本地补充产线映射。`,
+        sourceFile: fileName,
+        sourceSheet: SHEET_NAMES.channel,
+        sourceRow: rowIndex + 1,
+        centerName,
+        courseName,
+        productLine: courseMeta.productLine,
+        rawData: buildRawRowObject(matrix[headerRowIndex], row)
+      });
     }
     records.push({
       id: `${fileName}-${SHEET_NAMES.channel}-${rowIndex + 1}`,
@@ -342,6 +505,7 @@ function parseChannelSheet(worksheet, { fileName, baseCenters, courseCatalog, va
       requiredModel: courseMeta.requiredModel,
       teachers,
       teacherText: teachers.length ? teachers.join('、') : '讲师信息暂未维护',
+      _sourceRawData: buildRawRowObject(matrix[headerRowIndex], row),
       sourceFile: fileName,
       sourceSheet: SHEET_NAMES.channel,
       sourceRow: rowIndex + 1
@@ -379,6 +543,17 @@ function dedupeCenterCourseRecords(records, validation) {
     if (recordMap.has(key)) {
       validation.duplicateCenterCourseRows += 1;
       pushExample(validation.duplicateCenterCourseExamples, `${record.centerName}｜${record.courseName}`);
+      pushConstructionDirtyRow(validation, {
+        category: '中心课程承接重复',
+        reason: `重复中心-课程承接关系「${record.centerName}｜${record.courseName}」，已跳过避免重复计数。`,
+        sourceFile: record.sourceFile,
+        sourceSheet: record.sourceSheet,
+        sourceRow: record.sourceRow,
+        centerName: record.centerName,
+        courseName: record.courseName,
+        productLine: record.productLine,
+        rawData: record._sourceRawData || {}
+      });
       return;
     }
     recordMap.set(key, record);
@@ -410,7 +585,8 @@ function createValidationState() {
     channelRowsMissingRequiredFields: 0,
     channelRowsMissingRequiredExamples: [],
     duplicateCenterCourseRows: 0,
-    duplicateCenterCourseExamples: []
+    duplicateCenterCourseExamples: [],
+    dirtyRows: []
   };
 }
 
@@ -438,7 +614,8 @@ function finalizeValidation(validation) {
     channelRowsMissingRequiredFields: validation.channelRowsMissingRequiredFields,
     channelRowsMissingRequiredExamples: validation.channelRowsMissingRequiredExamples,
     duplicateCenterCourseRows: validation.duplicateCenterCourseRows,
-    duplicateCenterCourseExamples: validation.duplicateCenterCourseExamples
+    duplicateCenterCourseExamples: validation.duplicateCenterCourseExamples,
+    dirtyRowCount: validation.dirtyRows.length
   };
 }
 
@@ -540,6 +717,31 @@ function buildColumnIndexMap(headerRow) {
 
 function sheetToMatrix(worksheet) {
   return XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true });
+}
+
+function pushConstructionDirtyRow(validation, dirtyRow) {
+  validation.dirtyRows.push({
+    category: dirtyRow.category || '建设数据疑惑',
+    reason: dirtyRow.reason || '',
+    sourceFile: dirtyRow.sourceFile || '',
+    sourceSheet: dirtyRow.sourceSheet || '',
+    sourceRow: dirtyRow.sourceRow || '',
+    centerName: dirtyRow.centerName || '',
+    trainingCenter: dirtyRow.centerName || '',
+    courseName: dirtyRow.courseName || '',
+    productLine: dirtyRow.productLine || '',
+    rawData: dirtyRow.rawData || {}
+  });
+}
+
+function buildRawRowObject(headerRow, row) {
+  const rawData = {};
+  const maxLength = Math.max(headerRow?.length || 0, row?.length || 0);
+  for (let index = 0; index < maxLength; index += 1) {
+    const header = readPlainCell(headerRow?.[index]) || `列${index + 1}`;
+    rawData[header] = readPlainCell(row?.[index]);
+  }
+  return rawData;
 }
 
 function readCellValue(row, index) {

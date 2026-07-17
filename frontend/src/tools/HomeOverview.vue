@@ -152,14 +152,14 @@ const baseTools = [
   },
   {
     key: 'service-qualification-map',
-    name: '中国区人员服务资质地图',
-    description: '查看全国分公司服务资质覆盖情况、资质到期预警及产品线能力分布。',
+    name: '工程师服务资质地图',
+    description: '查看中国区与国际区工程师服务资质覆盖、到期风险及产品线能力分布。',
     icon: MapPinned
   },
   {
     key: 'training-coverage-map',
     name: '中国区培训中心建设/交付地图',
-    description: '查看培训中心建设承接能力，以及全国培训交付、培训场次、合格率和培训类型分布情况。',
+    description: '查看培训中心建设承接能力，以及全国培训交付、培训场次、合格率和课程分布情况。',
     icon: Presentation
   },
   {

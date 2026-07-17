@@ -202,38 +202,6 @@ function renderChart() {
     pointMetricResolver: (point) => point.courseCount,
     tooltipFormatter: buildPointTooltip
   });
-  option.series[0].label = {
-    show: true,
-    formatter(params) {
-      return Number(params.data?.point?.courseCount || 0).toLocaleString('zh-CN');
-    },
-    position: 'inside',
-    color: '#04111f',
-    fontSize: 11,
-    fontWeight: 900
-  };
-  option.series[0].emphasis = {
-    scale: 1.35,
-    label: {
-      show: true,
-      formatter(params) {
-        const point = params.data?.point;
-        if (!point) return '';
-        return `${point.centerName}\n${point.courseCount}门`;
-      },
-      position: 'top',
-      distance: 12,
-      color: '#f7fbff',
-      fontSize: 12,
-      fontWeight: 800,
-      lineHeight: 17,
-      backgroundColor: 'rgba(5, 18, 34, 0.9)',
-      borderColor: 'rgba(103, 232, 255, 0.56)',
-      borderWidth: 1,
-      borderRadius: 8,
-      padding: [7, 10]
-    }
-  };
   chartInstance.setOption(option, true);
   chartInstance.resize();
   applyFocus();

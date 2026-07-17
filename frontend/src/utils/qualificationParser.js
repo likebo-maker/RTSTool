@@ -99,9 +99,10 @@ export async function parseQualificationFiles(fileList, options = {}) {
         continue;
       }
 
+      const dataColumnIndexes = getDataColumnIndexes(columnIndexMap);
       const totalRows = Math.max(range.e.r - headerRowIndex, 1);
       for (let rowIndex = headerRowIndex + 1; rowIndex <= range.e.r; rowIndex += 1) {
-        const row = getRowValues(worksheet, rowIndex, range);
+        const row = getSparseRowValues(worksheet, rowIndex, dataColumnIndexes);
         if (isBlankRow(row)) continue;
 
         if ((rowIndex - headerRowIndex) % ROW_YIELD_INTERVAL === 0) {
@@ -334,11 +335,23 @@ function getWorksheetRange(worksheet) {
   return XLSX.utils.decode_range(worksheet['!ref']);
 }
 
+function getDataColumnIndexes(columnIndexMap) {
+  return [...new Set(Object.values(columnIndexMap).filter((index) => Number.isInteger(index) && index >= 0))];
+}
+
 function getRowValues(worksheet, rowIndex, range) {
   const row = [];
   for (let columnIndex = range.s.c; columnIndex <= range.e.c; columnIndex += 1) {
     row.push(readWorksheetCellValue(worksheet, rowIndex, columnIndex));
   }
+  return row;
+}
+
+function getSparseRowValues(worksheet, rowIndex, columnIndexes) {
+  const row = [];
+  columnIndexes.forEach((columnIndex) => {
+    row[columnIndex] = readWorksheetCellValue(worksheet, rowIndex, columnIndex);
+  });
   return row;
 }
 

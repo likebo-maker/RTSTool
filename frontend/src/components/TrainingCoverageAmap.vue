@@ -71,7 +71,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
-import { getTrainingRegionGroups } from '../utils/branchRegionMap';
+import { getQualificationRegionGroups } from '../utils/branchGeoMap';
 import { resolveTrainingPointTone } from '../utils/trainingAggregator';
 import {
   buildOfflineChinaMapOption,
@@ -175,7 +175,7 @@ const regionLegendItems = computed(() => {
     regionCounts.set(key, (regionCounts.get(key) || 0) + 1);
   });
 
-  const items = getTrainingRegionGroups().map((region) => ({
+  const items = getQualificationRegionGroups().map((region) => ({
     name: region.name,
     color: region.color,
     count: regionCounts.get(region.name) || 0
@@ -276,7 +276,7 @@ function renderChart() {
   if (!chartInstance || props.loading) return;
   const option = buildOfflineChinaMapOption({
     points: props.points,
-    regionGroups: getTrainingRegionGroups(),
+    regionGroups: getQualificationRegionGroups(),
     selectedRegions: props.selectedRegions,
     selectedKey: props.selectedBranch,
     focusedKey: props.focusedBranch,
@@ -321,13 +321,13 @@ function resolvePointKey(point) {
 function resolvePointMetric(point) {
   if (props.displayMode === 'session-count') return point.sessionCount;
   if (props.displayMode === 'pass-rate') return point.passRateValue ?? 0;
-  return point.traineeCount;
+  return point.recordCount;
 }
 
 function resolvePointMetricLabel(point) {
   if (props.displayMode === 'session-count') return `培训场次 ${point.sessionCount}`;
   if (props.displayMode === 'pass-rate') return `合格率 ${point.passRate}`;
-  return `培训人次 ${point.traineeCount}`;
+  return `培训人次 ${point.recordCount}`;
 }
 
 function buildPointTooltip(point) {
@@ -337,13 +337,13 @@ function buildPointTooltip(point) {
       <strong>${escapeMapHtml(point.trainingCenter || point.branch)}</strong>
       <span>定位城市：${escapeMapHtml(point.city || '-')}</span>
       <span>大区：${escapeMapHtml(point.mappedRegion || '未匹配大区')}</span>
-      <span>培训人次：${Number(point.traineeCount || 0).toLocaleString('zh-CN')}</span>
-      <span>培训记录数：${Number(point.recordCount || 0).toLocaleString('zh-CN')}</span>
+      <span>培训人数：${Number(point.traineeCount || 0).toLocaleString('zh-CN')}</span>
+      <span>培训人次：${Number(point.recordCount || 0).toLocaleString('zh-CN')}</span>
       <span>培训场次：${Number(point.sessionCount || 0).toLocaleString('zh-CN')}</span>
       <span>合格率：${escapeMapHtml(point.passRate)}</span>
       <span>不合格人次：${Number(point.failCount || 0).toLocaleString('zh-CN')}</span>
       <span>主要产线：${escapeMapHtml(point.primaryProductLines)}</span>
-      <span>主要培训类型：${escapeMapHtml(point.primaryTrainingTypes)}</span>
+      <span>主要课程：${escapeMapHtml(point.primaryCourses || point.primaryTrainingTypes)}</span>
     </div>
   `;
 }
