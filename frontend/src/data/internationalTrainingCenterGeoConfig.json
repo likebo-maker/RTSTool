@@ -1,0 +1,17 @@
+{
+  "countryAliases": {
+    "Chilie": "Chile",
+    "Philippine": "Philippines"
+  },
+  "cityCoordinates": [
+    { "country": "Russia", "city": "Moscow", "coords": [37.6173, 55.7558] },
+    { "country": "Netherlands", "city": "Hoevelaken", "coords": [5.4574, 52.1765] },
+    { "country": "Romania", "city": "Bucharest", "coords": [26.1025, 44.4268] },
+    { "country": "China", "city": "Nanjing", "coords": [118.7969, 32.0603] },
+    { "country": "Colombia", "city": "Bogota", "coords": [-74.0721, 4.711] },
+    { "country": "United Kingdom", "city": "Huntingdon", "coords": [-0.186, 52.3305] },
+    { "country": "Germany", "city": "Darmstadt", "coords": [8.6512, 49.8728] },
+    { "country": "China", "city": "Wuhan", "coords": [114.3055, 30.5928] },
+    { "country": "China", "city": "Shenzhen", "coords": [114.0579, 22.5431] }
+  ]
+}

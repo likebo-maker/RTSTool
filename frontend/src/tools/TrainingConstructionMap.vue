@@ -22,7 +22,7 @@
           accept=".xlsx,.xls"
           @change="handleFileImport"
         />
-        <button class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="18" />
           <span>导入建设表</span>
         </button>
@@ -75,7 +75,7 @@
           accept=".xlsx,.xls"
           @change="handleFileImport"
         />
-        <button class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="16" />
           <span>导入建设表</span>
         </button>
@@ -487,10 +487,14 @@ const props = defineProps({
   active: {
     type: Boolean,
     default: true
+  },
+  allowImport: {
+    type: Boolean,
+    default: true
   }
 });
 
-const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen']);
+const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen', 'dataset-updated']);
 
 const fileInputRef = ref(null);
 const loading = ref(false);
@@ -520,7 +524,7 @@ const courseFilterOptions = computed(() => dynamicFilterOptions.value.courses);
 const dashboard = computed(() => buildTrainingConstructionDashboard(importedRecords.value, appliedFilters.value));
 const hasData = computed(() => Boolean(importedRecords.value.length));
 const interactionDisabled = computed(() => loading.value || importOverlay.visible);
-const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的建设数据，请调整筛选条件。' : '请导入培训中心建设表'));
+const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的建设数据，请调整筛选条件。' : '请在全球数据页导入中国区培训中心建设数据。'));
 const dataStatusText = computed(() => {
   if (!hasData.value) return '待导入建设数据';
   return `已导入 ${importedRecords.value.length.toLocaleString('zh-CN')} 条中心课程关系`;
@@ -616,6 +620,7 @@ async function handleFileImport(event) {
       sourceFiles: files.map((file) => file.name),
       importedAt: result.importedAt
     });
+    emit('dataset-updated');
     importOverlay.mode = 'success';
     importOverlay.progress = 100;
     importOverlay.message = '培训中心建设地图数据已更新。';
@@ -641,6 +646,12 @@ function updateImportProgress(payload = {}) {
     step.status = payload.status || 'processing';
   }
 }
+
+async function importFiles(files) {
+  await handleFileImport({ target: { files, value: '' } });
+}
+
+defineExpose({ importFiles });
 
 function applyFilters() {
   const validation = validateDraftFilters();

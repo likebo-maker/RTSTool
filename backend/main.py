@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from openpyxl.chart import BarChart, DoughnutChart, Reference
 from openpyxl.chart.label import DataLabelList
@@ -54,6 +54,17 @@ try:
     from geo_cache_service import geo_cache_service
 except ModuleNotFoundError:  # pragma: no cover - package import path used by launcher
     from backend.geo_cache_service import geo_cache_service
+
+try:
+    from international_qualification_service import (
+        InternationalQualificationDataError,
+        InternationalQualificationStore,
+    )
+except ModuleNotFoundError:  # pragma: no cover - package import path used by launcher
+    from backend.international_qualification_service import (
+        InternationalQualificationDataError,
+        InternationalQualificationStore,
+    )
 
 
 APP_NAME = "技术支持效率平台"
@@ -98,9 +109,20 @@ def _resolve_output_dir() -> Path:
 
 
 def _resolve_dataset_dir() -> Path:
+    override = os.environ.get("TSEP_DATASET_DIR")
+    if override:
+        return Path(override).expanduser().resolve()
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent / "data" / "local_datasets"
     return Path(__file__).resolve().parent.parent / "data" / "local_datasets"
+
+
+def _resolve_backend_data_file(name: str) -> Path:
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        bundled = Path(sys._MEIPASS) / "backend" / "data" / name
+        if bundled.exists():
+            return bundled
+    return Path(__file__).resolve().parent / "data" / name
 
 
 def _find_free_port(start_port: int = 8000, attempts: int = 50) -> int:
@@ -134,6 +156,10 @@ OUTPUT_DIR = _resolve_output_dir()
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 DATASET_DIR = _resolve_dataset_dir()
 DATASET_DIR.mkdir(parents=True, exist_ok=True)
+INTERNATIONAL_QUALIFICATION_STORE = InternationalQualificationStore(
+    DATASET_DIR,
+    _resolve_backend_data_file("global_region_config.json"),
+)
 
 WORK_ORDER_SHEET_NAME = "工单报表 - 已筛选"
 TARGET_PRODUCT_LINE = "IVD"
@@ -3087,6 +3113,125 @@ def _dataset_file_path(tool_key: str) -> Path:
     return DATASET_DIR / f"{tool_key}.json"
 
 
+def _dataset_snapshot_file_path(tool_key: str) -> Path:
+    return DATASET_DIR / f"{tool_key}.global_snapshot.json"
+
+
+def _qualification_person_key(record: dict[str, Any]) -> str:
+    employee_id = str(record.get("employeeId") or "").strip()
+    person_name = str(record.get("personName") or "").strip()
+    return f"{employee_id}|{person_name}" if employee_id or person_name else ""
+
+
+def _build_service_qualification_global_snapshot(record: dict[str, Any], source_mtime_ns: int) -> dict[str, Any]:
+    payload = record.get("payload") or {}
+    records = payload.get("records") or []
+    people: set[str] = set()
+    partners: set[str] = set()
+    branches: dict[str, dict[str, Any]] = {}
+    valid_qualifications = 0
+
+    for item in records:
+        branch_name = str(item.get("branch") or "").strip()
+        if not branch_name:
+            continue
+        person_key = _qualification_person_key(item)
+        if person_key:
+            people.add(person_key)
+        is_valid = bool(item.get("isCurrentlyValid"))
+        if is_valid:
+            valid_qualifications += 1
+        contractor_name = str(item.get("contractorName") or "").strip()
+        if item.get("isChannelPartner") and contractor_name:
+            partners.add(contractor_name)
+
+        branch = branches.setdefault(
+            branch_name,
+            {
+                "branchName": branch_name,
+                "region": str(item.get("mappedRegion") or "").strip(),
+                "people": set(),
+                "partners": set(),
+                "validQualifications": 0,
+                "expiredQualifications": 0,
+                "expiring30": 0,
+                "expiring60": 0,
+                "totalRecords": 0,
+            },
+        )
+        branch["totalRecords"] += 1
+        if person_key:
+            branch["people"].add(person_key)
+        if is_valid:
+            branch["validQualifications"] += 1
+        status = str(item.get("qualificationStatus") or "").strip()
+        if status == "已过期":
+            branch["expiredQualifications"] += 1
+        elif status == "30天内到期":
+            branch["expiring30"] += 1
+        elif status == "60天内到期":
+            branch["expiring60"] += 1
+        if item.get("isChannelPartner") and contractor_name:
+            branch["partners"].add(contractor_name)
+
+    branch_stats = []
+    for branch in branches.values():
+        branch_stats.append(
+            {
+                "branchName": branch["branchName"],
+                "region": branch["region"],
+                "peopleCount": len(branch["people"]),
+                "coveredPartners": len(branch["partners"]),
+                "validQualifications": branch["validQualifications"],
+                "expiredQualifications": branch["expiredQualifications"],
+                "expiring30": branch["expiring30"],
+                "expiring60": branch["expiring60"],
+                "totalRecords": branch["totalRecords"],
+            }
+        )
+
+    branch_stats.sort(key=lambda item: (-item["validQualifications"], item["branchName"]))
+    return {
+        "toolKey": "service_qualification_map",
+        "sourceMtimeNs": source_mtime_ns,
+        "recordCount": len(records),
+        "updatedAt": payload.get("importedAt") or record.get("updatedAt") or "",
+        "summary": {
+            "totalPeople": len(people),
+            "validQualifications": valid_qualifications,
+            "coveredPartners": len(partners),
+        },
+        "branchStats": branch_stats,
+    }
+
+
+def _load_or_build_service_qualification_global_snapshot() -> dict[str, Any]:
+    tool_key = "service_qualification_map"
+    dataset_path = _dataset_file_path(tool_key)
+    if not dataset_path.exists():
+        raise HTTPException(status_code=404, detail="本地数据集不存在")
+    snapshot_path = _dataset_snapshot_file_path(tool_key)
+    source_mtime_ns = dataset_path.stat().st_mtime_ns
+
+    if snapshot_path.exists():
+        try:
+            cached = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            if int(cached.get("sourceMtimeNs") or 0) == source_mtime_ns:
+                return cached
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+    try:
+        record = json.loads(dataset_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="本地数据集已损坏，请重新导入") from exc
+    snapshot = _build_service_qualification_global_snapshot(record, source_mtime_ns)
+    temp_path = snapshot_path.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
+    temp_path.replace(snapshot_path)
+    return snapshot
+
+
 @app.get("/api/local-datasets/{tool_key}")
 def load_local_dataset(tool_key: str) -> dict[str, Any]:
     dataset_path = _dataset_file_path(tool_key)
@@ -3097,6 +3242,11 @@ def load_local_dataset(tool_key: str) -> dict[str, Any]:
         return json.loads(dataset_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=500, detail="本地数据集已损坏，请重新导入") from exc
+
+
+@app.get("/api/local-datasets/service_qualification_map/global-snapshot")
+def service_qualification_global_snapshot() -> dict[str, Any]:
+    return _load_or_build_service_qualification_global_snapshot()
 
 
 @app.post("/api/local-datasets/{tool_key}")
@@ -3110,7 +3260,101 @@ def save_local_dataset(tool_key: str, payload: dict[str, Any]) -> dict[str, Any]
     temp_path = dataset_path.with_suffix(".json.tmp")
     temp_path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
     temp_path.replace(dataset_path)
+    if tool_key == "service_qualification_map":
+        snapshot = _build_service_qualification_global_snapshot(record, dataset_path.stat().st_mtime_ns)
+        snapshot_path = _dataset_snapshot_file_path(tool_key)
+        snapshot_temp_path = snapshot_path.with_suffix(".json.tmp")
+        snapshot_temp_path.write_text(json.dumps(snapshot, ensure_ascii=False), encoding="utf-8")
+        snapshot_temp_path.replace(snapshot_path)
     return {"success": True, "updatedAt": record["updatedAt"]}
+
+
+def _international_qualification_error(error: InternationalQualificationDataError) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(error))
+
+
+def _excel_download(content: bytes, file_name: str) -> Response:
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+    )
+
+
+@app.get("/api/international-qualification/dataset")
+def international_qualification_dataset() -> dict[str, Any]:
+    try:
+        return INTERNATIONAL_QUALIFICATION_STORE.metadata()
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+
+
+@app.post("/api/international-qualification/dataset")
+def save_international_qualification_dataset(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return INTERNATIONAL_QUALIFICATION_STORE.save_dataset(payload)
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+
+
+@app.post("/api/international-qualification/filter-options")
+def international_qualification_filter_options(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return INTERNATIONAL_QUALIFICATION_STORE.dynamic_filter_options(payload.get("filters") or payload)
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+
+
+@app.post("/api/international-qualification/query")
+def international_qualification_query(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return INTERNATIONAL_QUALIFICATION_STORE.query(payload.get("filters") or payload)
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+
+
+@app.post("/api/international-qualification/country-detail")
+def international_qualification_country_detail(payload: dict[str, Any]) -> dict[str, Any]:
+    country = str(payload.get("country") or "").strip()
+    if not country:
+        raise HTTPException(status_code=400, detail="Country is required.")
+    try:
+        return INTERNATIONAL_QUALIFICATION_STORE.country_detail(country, payload.get("filters") or {})
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+
+
+@app.post("/api/international-qualification/export/current")
+def export_international_qualification_current(payload: dict[str, Any]) -> Response:
+    _require_feature(FEATURES["EXPORT_EXCEL"])
+    try:
+        content, file_name = INTERNATIONAL_QUALIFICATION_STORE.current_export(payload.get("filters") or payload)
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+    return _excel_download(content, file_name)
+
+
+@app.post("/api/international-qualification/export/country")
+def export_international_qualification_country(payload: dict[str, Any]) -> Response:
+    _require_feature(FEATURES["EXPORT_EXCEL"])
+    country = str(payload.get("country") or "").strip()
+    if not country:
+        raise HTTPException(status_code=400, detail="Country is required.")
+    try:
+        content, file_name = INTERNATIONAL_QUALIFICATION_STORE.country_export(country, payload.get("filters") or {})
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+    return _excel_download(content, file_name)
+
+
+@app.post("/api/international-qualification/export/dirty")
+def export_international_qualification_dirty() -> Response:
+    _require_feature(FEATURES["EXPORT_EXCEL"])
+    try:
+        content, file_name = INTERNATIONAL_QUALIFICATION_STORE.dirty_export()
+    except InternationalQualificationDataError as exc:
+        raise _international_qualification_error(exc) from exc
+    return _excel_download(content, file_name)
 
 
 @app.get("/api/geo-cache")

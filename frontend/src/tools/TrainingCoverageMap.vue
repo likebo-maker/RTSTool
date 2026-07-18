@@ -25,7 +25,7 @@
           multiple
           @change="handleFileImport"
         />
-        <button class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="18" />
           <span>导入培训表</span>
         </button>
@@ -86,7 +86,7 @@
           multiple
           @change="handleFileImport"
         />
-        <button class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="16" />
           <span>导入培训表</span>
         </button>
@@ -589,10 +589,14 @@ const props = defineProps({
   embedded: {
     type: Boolean,
     default: false
+  },
+  allowImport: {
+    type: Boolean,
+    default: true
   }
 });
 
-const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen']);
+const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen', 'dataset-updated']);
 
 const TOP_LIST_LIMIT = 10;
 const CHART_TOP_LIMIT = 10;
@@ -663,8 +667,8 @@ const hasData = computed(() => Boolean(importedRecords.value.length));
 const constructionReady = computed(() => Boolean(constructionRecords.value.length));
 const interactionDisabled = computed(() => loading.value || importOverlay.visible);
 const emptyStateText = computed(() => {
-  if (!constructionReady.value) return '请先导入中国区培训中心建设地图数据';
-  return hasData.value ? '暂无符合条件的培训数据，请调整筛选条件。' : '请导入培训中心交付数据';
+  if (!constructionReady.value) return '请先在全球建设数据页导入中国区培训中心建设数据';
+  return hasData.value ? '暂无符合条件的培训数据，请调整筛选条件。' : '请在全球数据页导入中国区培训中心交付数据';
 });
 const dataStatusText = computed(() => {
   if (!constructionReady.value) return '请先导入建设地图数据';
@@ -1090,6 +1094,7 @@ async function handleFileImport(event) {
       validation: payload.validation,
       geoMap: geoCacheMap.value
     });
+    emit('dataset-updated');
     await nextTick();
     updateImportOverlayStep('generate', 'completed', 100, '导入完成');
     importOverlay.mode = 'success';
@@ -1107,6 +1112,12 @@ async function handleFileImport(event) {
     event.target.value = '';
   }
 }
+
+async function importFiles(files) {
+  await handleFileImport({ target: { files, value: '' } });
+}
+
+defineExpose({ importFiles });
 
 function applyFilters() {
   if (!validateDraftFilters()) return;

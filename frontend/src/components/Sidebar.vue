@@ -62,7 +62,7 @@
         </button>
         <button class="nav-item sub-item" :class="{ active: activeTool === 'training-coverage-map', locked: isLocked('training-coverage-map') }" type="button" @click="$emit('select', 'training-coverage-map')">
           <Presentation :size="17" />
-          <span>中国区培训中心建设/交付地图</span>
+          <span>迈瑞培训中心建设/交付地图</span>
           <LockKeyhole v-if="isLocked('training-coverage-map')" class="nav-lock" :size="14" />
         </button>
       </div>

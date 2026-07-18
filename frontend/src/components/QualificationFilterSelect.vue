@@ -28,7 +28,7 @@
             @change="toggleAll"
           />
           <span>{{ allLabel }}</span>
-          <strong>{{ normalizedOptions.length }}</strong>
+          <strong>{{ normalizedAllOptions.length }}</strong>
         </label>
 
         <label
@@ -62,6 +62,10 @@ const props = defineProps({
     default: () => []
   },
   options: {
+    type: Array,
+    default: () => []
+  },
+  allOptions: {
     type: Array,
     default: () => []
   },
@@ -111,10 +115,17 @@ const rootRef = ref(null);
 const allCheckboxRef = ref(null);
 
 const normalizedOptions = computed(() => [...new Set(props.options.filter(Boolean))]);
+const normalizedAllOptions = computed(() => {
+  const source = props.allOptions.length ? props.allOptions : props.options;
+  return [...new Set(source.filter(Boolean))];
+});
 const selectedValues = computed(() => {
   return props.modelValue.filter((value) => normalizedOptions.value.includes(value));
 });
-const selectedSet = computed(() => new Set(selectedValues.value));
+const stableSelectedValues = computed(() => {
+  return props.modelValue.filter((value) => normalizedAllOptions.value.includes(value));
+});
+const selectedSet = computed(() => new Set(stableSelectedValues.value));
 
 const filteredOptions = computed(() => {
   if (!props.searchable || !keyword.value) return normalizedOptions.value;
@@ -122,11 +133,16 @@ const filteredOptions = computed(() => {
   return normalizedOptions.value.filter((option) => option.toLowerCase().includes(lowerKeyword));
 });
 
-const isAllSelected = computed(() => normalizedOptions.value.length > 0 && selectedValues.value.length === normalizedOptions.value.length);
-const isPartiallySelected = computed(() => selectedValues.value.length > 0 && selectedValues.value.length < normalizedOptions.value.length);
+const isAllSelected = computed(() => {
+  return normalizedAllOptions.value.length > 0
+    && stableSelectedValues.value.length === normalizedAllOptions.value.length;
+});
+const isPartiallySelected = computed(() => {
+  return stableSelectedValues.value.length > 0 && !isAllSelected.value;
+});
 
 const displayText = computed(() => {
-  const values = selectedValues.value;
+  const values = stableSelectedValues.value;
   if (isAllSelected.value) return props.allSelectedText;
   if (!values.length) return props.unselectedText;
   if (values.length === 1) return values[0];
@@ -158,14 +174,16 @@ function close() {
 }
 
 function toggleAll(event) {
-  emit('update:modelValue', event.target.checked ? [...normalizedOptions.value] : []);
+  const nextValues = event?.target?.checked ? [...normalizedAllOptions.value] : [];
+  emit('update:modelValue', nextValues);
+  nextTick(syncAllCheckboxState);
 }
 
 function toggleOption(option) {
-  const current = new Set(selectedValues.value);
+  const current = new Set(stableSelectedValues.value);
   if (current.has(option)) current.delete(option);
   else current.add(option);
-  emit('update:modelValue', normalizedOptions.value.filter((item) => current.has(item)));
+  emit('update:modelValue', normalizedAllOptions.value.filter((item) => current.has(item)));
 }
 
 function handleClickOutside(event) {

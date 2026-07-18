@@ -13,7 +13,9 @@ export const LOCAL_DATASET_KEYS = {
   SERVICE_QUALIFICATION_MAP: 'service_qualification_map',
   INTERNATIONAL_SERVICE_QUALIFICATION_MAP: 'international_service_qualification_map',
   TRAINING_COVERAGE_MAP: 'training_coverage_map',
-  TRAINING_CONSTRUCTION_MAP: 'training_construction_map'
+  TRAINING_CONSTRUCTION_MAP: 'training_construction_map',
+  INTERNATIONAL_TRAINING_CONSTRUCTION_MAP: 'international_training_construction_map',
+  INTERNATIONAL_TRAINING_DELIVERY_MAP: 'international_training_delivery_map'
 };
 
 export async function saveToolDataset(toolKey, payload) {

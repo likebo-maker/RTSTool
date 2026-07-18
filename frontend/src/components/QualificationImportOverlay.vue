@@ -1,6 +1,7 @@
 <template>
-  <Transition name="disclaimer-fade">
-    <div v-if="visible" class="qualification-import-overlay">
+  <Teleport to="body">
+    <Transition name="disclaimer-fade">
+      <div v-if="visible" class="qualification-import-overlay">
       <section class="qualification-import-card">
         <div class="qualification-import-head">
           <div class="qualification-import-mark" :class="mode">
@@ -52,8 +53,9 @@
           </button>
         </div>
       </section>
-    </div>
-  </Transition>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup>

@@ -1,5 +1,5 @@
 <template>
-  <Transition name="disclaimer-fade">
+  <Teleport to="body">
     <div v-if="visible" class="operation-backdrop" aria-live="assertive">
       <section class="operation-modal" role="status" aria-modal="true">
         <div class="operation-icon">
@@ -12,7 +12,7 @@
         </div>
       </section>
     </div>
-  </Transition>
+  </Teleport>
 </template>
 
 <script setup>

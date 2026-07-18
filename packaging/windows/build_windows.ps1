@@ -322,6 +322,7 @@ try {
             --paths $Root `
             --paths (Join-Path $Root 'backend') `
             --add-data "$FrontendDist;frontend/dist" `
+            --add-data "$(Join-Path $Root 'backend\data');backend/data" `
             --hidden-import license_service `
             --hidden-import backend.license_service `
             --hidden-import python_multipart `

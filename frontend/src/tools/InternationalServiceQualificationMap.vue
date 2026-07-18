@@ -24,7 +24,7 @@
           multiple
           @change="handleFileImport"
         />
-        <button class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="18" />
           <span>Import Excel</span>
         </button>
@@ -32,7 +32,7 @@
           class="ghost-button"
           :class="{ locked: !canExportExcel }"
           type="button"
-          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecords.length)"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecordCount)"
           :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : ''"
           @click="exportCurrentResult"
         >
@@ -44,8 +44,8 @@
           class="ghost-button"
           :class="{ locked: !canExportExcel }"
           type="button"
-          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dirtyRows.length)"
-          :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : !dirtyRows.length ? 'No dirty rows to export.' : ''"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dirtyRowCount)"
+          :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : !dirtyRowCount ? 'No dirty rows to export.' : ''"
           @click="exportDirtyRows"
         >
           <LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="18" />
@@ -79,7 +79,7 @@
           multiple
           @change="handleFileImport"
         />
-        <button class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="18" />
           <span>Import Excel</span>
         </button>
@@ -87,7 +87,7 @@
           class="ghost-button"
           :class="{ locked: !canExportExcel }"
           type="button"
-          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecords.length)"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecordCount)"
           :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : ''"
           @click="exportCurrentResult"
         >
@@ -99,8 +99,8 @@
           class="ghost-button"
           :class="{ locked: !canExportExcel }"
           type="button"
-          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dirtyRows.length)"
-          :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : !dirtyRows.length ? 'No dirty rows to export.' : ''"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dirtyRowCount)"
+          :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : !dirtyRowCount ? 'No dirty rows to export.' : ''"
           @click="exportDirtyRows"
         >
           <LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="18" />
@@ -138,7 +138,7 @@
           multiple
           @change="handleFileImport"
         />
-        <button class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="16" />
           <span>Import Excel</span>
         </button>
@@ -146,7 +146,7 @@
           class="ghost-button compact"
           :class="{ locked: !canExportExcel }"
           type="button"
-          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecords.length)"
+          :disabled="interactionDisabled || Boolean(activeExportKey) || (canExportExcel && !dashboard.filteredRecordCount)"
           @click="exportCurrentResult"
         >
           <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="16" />
@@ -182,6 +182,8 @@
           v-model="draftFilters[field.key]"
           :label="field.label"
           :options="getFilterOptions(field.key)"
+          :all-options="allOptions[field.key]"
+          preserve-external-values
           searchable
           :search-placeholder="field.placeholder"
           collapse-label="Collapse"
@@ -208,9 +210,9 @@
         <AlertTriangle :size="16" />
         <span>{{ warningMessage }}</span>
       </div>
-      <div v-if="dirtyRows.length && !warningMessage" class="qualification-warning-list">
+      <div v-if="dirtyRowCount && !warningMessage" class="qualification-warning-list">
         <AlertTriangle :size="16" />
-        <span>{{ dirtyRows.length.toLocaleString('en-US') }} rows were excluded. Export dirty rows to review the full original rows and reasons.</span>
+        <span>{{ dirtyRowCount.toLocaleString('en-US') }} rows were excluded. Export dirty rows to review the full original rows and reasons.</span>
       </div>
     </section>
 
@@ -360,7 +362,7 @@
                 class="ghost-button"
                 :class="{ locked: !canExportExcel }"
                 type="button"
-                :disabled="Boolean(activeExportKey) || (canExportExcel && !filteredCountryRows.length)"
+                :disabled="Boolean(activeExportKey) || (canExportExcel && !countryDetail.recordCount)"
                 :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : ''"
                 @click="exportCountryDetail"
               >
@@ -448,11 +450,20 @@
       title="Processing Export"
       message="Please wait until the current Excel file is generated."
     />
+
+    <BlockingOperationModal
+      :visible="querying"
+      :kicker="queryingAction === 'reset' ? 'RESETTING' : 'SEARCHING'"
+      :title="queryingAction === 'reset' ? 'Resetting filters...' : 'Searching...'"
+      :message="queryingAction === 'reset'
+        ? 'Restoring all filter options and refreshing the map, metrics, and rankings.'
+        : 'Applying the current filters and refreshing the map, metrics, and rankings.'"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch, watchEffect } from 'vue';
 import {
   AlertTriangle,
   CalendarClock,
@@ -477,20 +488,8 @@ import InternationalQualificationWorldMap from '../components/InternationalQuali
 import EChartPanel from '../components/EChartPanel.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
 import BlockingOperationModal from '../components/BlockingOperationModal.vue';
-import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
-import {
-  DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS,
-  buildInternationalCountryDetail,
-  buildInternationalDynamicFilterOptions,
-  buildInternationalQualificationDashboard,
-  collectInternationalQualificationOptions
-} from '../utils/internationalQualificationAggregator';
+import { DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS } from '../utils/internationalQualificationAggregator';
 import { parseInternationalQualificationFiles } from '../utils/internationalQualificationParser';
-import {
-  exportInternationalCountryQualificationRecords,
-  exportInternationalDirtyRows,
-  exportInternationalQualificationRecords
-} from '../utils/internationalQualificationExport';
 
 const props = defineProps({
   canExportExcel: {
@@ -508,13 +507,18 @@ const props = defineProps({
   embedded: {
     type: Boolean,
     default: false
+  },
+  allowImport: {
+    type: Boolean,
+    default: true
   }
 });
 
-const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen']);
+const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen', 'dataset-updated']);
 
 const TOP_LIST_LIMIT = 10;
 const CHART_TOP_LIMIT = 10;
+const FILTER_OPTION_DEBOUNCE_MS = 140;
 const filterFields = [
   { key: 'secondaryRegions', label: 'Secondary Region', placeholder: 'Search secondary region' },
   { key: 'countries', label: 'Country', placeholder: 'Search country' },
@@ -531,10 +535,12 @@ const sideTabs = [
 ];
 
 const fileInputRef = ref(null);
-const records = ref([]);
-const dirtyRows = ref([]);
+const datasetMeta = shallowRef(createEmptyDatasetMetadata());
+const dirtyRowCount = ref(0);
 const importWarnings = ref([]);
 const loading = ref(false);
+const querying = ref(false);
+const queryingAction = ref('search');
 const activeExportKey = ref('');
 const warningMessage = ref('');
 const selectedCountry = ref('');
@@ -543,11 +549,16 @@ const fullscreenFiltersOpen = ref(false);
 const fullscreenControlsVisible = ref(true);
 let fullscreenControlsTimer = null;
 let importOverlayCloseTimer = null;
+let filterOptionTimer = null;
+let filterOptionRequestId = 0;
+let countryDetailRequestId = 0;
 
 const allOptions = reactive(createEmptyOptions());
+const dynamicOptions = shallowRef(createEmptyOptions());
 const draftFilters = reactive(cloneFilters(DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS));
 const appliedFilters = reactive(cloneFilters(DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS));
-const dashboard = ref(buildInternationalQualificationDashboard([], appliedFilters));
+const dashboard = shallowRef(createEmptyDashboard());
+const countryDetail = shallowRef(createEmptyCountryDetail());
 const importOverlay = reactive({
   visible: false,
   mode: 'progress',
@@ -558,17 +569,12 @@ const importOverlay = reactive({
   steps: createImportSteps()
 });
 
-const hasData = computed(() => records.value.length > 0);
+const hasData = computed(() => datasetMeta.value.recordCount > 0);
 const visualsActive = computed(() => props.active);
-const emptyStateText = computed(() => hasData.value ? 'No data matches the current filters.' : 'Import international qualification Excel to generate the world map.');
+const emptyStateText = computed(() => hasData.value ? 'No data matches the current filters.' : 'Import International Service Qualification Data from the Global tab.');
 const dataStatusText = computed(() => {
   if (!hasData.value) return 'Waiting for import';
-  return `${dashboard.value.filteredRecords.length.toLocaleString('en-US')} rows in current result`;
-});
-
-const dynamicFilterOptions = computed(() => {
-  if (!hasData.value) return createEmptyOptions();
-  return buildInternationalDynamicFilterOptions(records.value, draftFilters, allOptions);
+  return `${dashboard.value.filteredRecordCount.toLocaleString('en-US')} rows in current result`;
 });
 
 const metricCards = computed(() => [
@@ -591,11 +597,6 @@ const qualificationTypeBarOption = computed(() => buildBarOption(dashboard.value
 const productLineChartHeight = computed(() => chartHeightForRows(Math.min(dashboard.value.productLineDistribution.length, CHART_TOP_LIMIT), 248));
 const qualificationTypeChartHeight = computed(() => chartHeightForRows(Math.min(dashboard.value.qualificationTypeDistribution.length, CHART_TOP_LIMIT), 248));
 
-const countryDetail = computed(() => {
-  if (!selectedCountry.value) return { countryRecords: [], countryStat: null };
-  return buildInternationalCountryDetail(selectedCountry.value, dashboard.value.filteredRecords);
-});
-const filteredCountryRows = computed(() => countryDetail.value.countryRecords || []);
 const countryMetricCards = computed(() => {
   const stat = countryDetail.value.countryStat;
   if (!stat) return [];
@@ -620,32 +621,33 @@ watchEffect(() => {
     return;
   }
   emit('status-change', hasData.value
-    ? `International qualification map ready, ${dashboard.value.filteredRecords.length.toLocaleString('en-US')} rows in current result`
+    ? `International qualification map ready, ${dashboard.value.filteredRecordCount.toLocaleString('en-US')} rows in current result`
     : 'International service qualification map is waiting for import.');
 });
 
 watch(
   () => props.active,
   (isActive) => {
-    if (isActive) refreshDashboard();
+    if (isActive && hasData.value) refreshDashboardFromBackend();
   }
 );
 
 watch(
-  dynamicFilterOptions,
+  () => filterFields.map((field) => draftFilters[field.key]),
   () => {
-    pruneDraftFilters();
+    scheduleFilterOptionRefresh();
   },
   { deep: true }
 );
 
 onMounted(() => {
-  loadSavedDataset();
+  loadBackendDataset();
 });
 
 onBeforeUnmount(() => {
   clearTimeout(fullscreenControlsTimer);
   clearTimeout(importOverlayCloseTimer);
+  clearTimeout(filterOptionTimer);
 });
 
 function openImporter() {
@@ -669,22 +671,31 @@ async function handleFileImport(event) {
       onProgress: updateImportProgress
     });
 
-    records.value = result.records || [];
-    dirtyRows.value = result.dirtyRows || [];
-    importWarnings.value = result.warnings || [];
-    replaceOptions(collectInternationalQualificationOptions(records.value));
+    // Keep parsed rows only long enough to hand them to the local service.
+    updateImportProgress({ step: 'chart', status: 'processing', progress: 94, message: 'Saving the local query dataset...' });
+    await nextTick();
+    await yieldToBrowser();
+    const metadata = await requestInternationalApi('/api/international-qualification/dataset', {
+      method: 'POST',
+      body: {
+        records: result.records || [],
+        dirtyRows: result.dirtyRows || [],
+        warnings: result.warnings || []
+      }
+    });
+    applyDatasetMetadata(metadata);
     assignFilters(draftFilters, createAllSelectedFilters(allOptions));
     assignFilters(appliedFilters, draftFilters);
-    refreshDashboard();
-    await saveCurrentDataset();
+    await refreshDashboardFromBackend();
+    emit('dataset-updated');
 
     importOverlay.mode = 'success';
     importOverlay.progress = 100;
-    importOverlay.message = `Imported ${records.value.length.toLocaleString('en-US')} valid rows. Excluded ${dirtyRows.value.length.toLocaleString('en-US')} rows.`;
+    importOverlay.message = `Imported ${datasetMeta.value.recordCount.toLocaleString('en-US')} valid rows. Excluded ${dirtyRowCount.value.toLocaleString('en-US')} rows.`;
     scheduleImportOverlayClose();
-    emit('log', `International qualification import completed: ${records.value.length} valid rows, ${dirtyRows.value.length} dirty rows.`);
-    if (dirtyRows.value.length) {
-      warningMessage.value = `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`;
+    emit('log', `International qualification import completed: ${datasetMeta.value.recordCount} valid rows, ${dirtyRowCount.value} dirty rows.`);
+    if (dirtyRowCount.value) {
+      warningMessage.value = `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`;
     }
   } catch (error) {
     importOverlay.mode = 'error';
@@ -694,10 +705,30 @@ async function handleFileImport(event) {
     emit('log', `International qualification import failed: ${importOverlay.errorMessage}`);
   } finally {
     loading.value = false;
+    scheduleFilterOptionRefresh(0);
   }
 }
 
-function applyFilters() {
+async function importFiles(files) {
+  await handleFileImport({ target: { files, value: '' } });
+}
+
+async function getDatasetStatus() {
+  try {
+    const metadata = await requestInternationalApi('/api/international-qualification/dataset');
+    return {
+      recordCount: Number(metadata?.recordCount || 0),
+      dirtyRowCount: Number(metadata?.dirtyRowCount || 0),
+      updatedAt: metadata?.updatedAt || ''
+    };
+  } catch (error) {
+    return { recordCount: 0, dirtyRowCount: 0, updatedAt: '' };
+  }
+}
+
+defineExpose({ importFiles, getDatasetStatus });
+
+async function applyFilters() {
   if (!hasData.value) {
     warningMessage.value = 'Please import international qualification data first.';
     return;
@@ -707,27 +738,45 @@ function applyFilters() {
     warningMessage.value = `Please select: ${missingFields.join(', ')}. "All" is also a valid selection.`;
     return;
   }
-  warningMessage.value = dirtyRows.value.length
-    ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
-    : '';
-  assignFilters(appliedFilters, draftFilters);
-  refreshDashboard();
-  saveCurrentDataset();
+  queryingAction.value = 'search';
+  querying.value = true;
+  await nextTick();
+  await yieldToBrowser();
+  try {
+    warningMessage.value = dirtyRowCount.value
+      ? `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
+      : '';
+    assignFilters(appliedFilters, draftFilters);
+    countryDetail.value = createEmptyCountryDetail();
+    await refreshDashboardFromBackend();
+  } finally {
+    querying.value = false;
+    scheduleFilterOptionRefresh(0);
+  }
 }
 
-function resetFilters() {
+async function resetFilters() {
   if (!hasData.value) {
     warningMessage.value = 'Please import international qualification data first.';
     return;
   }
-  assignFilters(draftFilters, createAllSelectedFilters(allOptions));
-  assignFilters(appliedFilters, draftFilters);
-  selectedCountry.value = '';
-  refreshDashboard();
-  warningMessage.value = dirtyRows.value.length
-    ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
-    : '';
-  saveCurrentDataset();
+  queryingAction.value = 'reset';
+  querying.value = true;
+  await nextTick();
+  await yieldToBrowser();
+  try {
+    assignFilters(draftFilters, createAllSelectedFilters(allOptions));
+    assignFilters(appliedFilters, draftFilters);
+    selectedCountry.value = '';
+    countryDetail.value = createEmptyCountryDetail();
+    await refreshDashboardFromBackend();
+    warningMessage.value = dirtyRowCount.value
+      ? `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
+      : '';
+  } finally {
+    querying.value = false;
+    scheduleFilterOptionRefresh(0);
+  }
 }
 
 async function exportCurrentResult() {
@@ -735,8 +784,12 @@ async function exportCurrentResult() {
   activeExportKey.value = 'current';
   try {
     await yieldToBrowser();
-    exportInternationalQualificationRecords(dashboard.value.filteredRecords);
-    emit('log', `Exported ${dashboard.value.filteredRecords.length} international qualification rows.`);
+    await downloadInternationalExport('/api/international-qualification/export/current', {
+      filters: cloneFilters(appliedFilters)
+    });
+    emit('log', `Exported ${dashboard.value.filteredRecordCount} international qualification rows.`);
+  } catch (error) {
+    warningMessage.value = error.message || 'Export failed.';
   } finally {
     activeExportKey.value = '';
   }
@@ -747,8 +800,10 @@ async function exportDirtyRows() {
   activeExportKey.value = 'dirty';
   try {
     await yieldToBrowser();
-    exportInternationalDirtyRows(dirtyRows.value);
-    emit('log', `Exported ${dirtyRows.value.length} international qualification dirty rows.`);
+    await downloadInternationalExport('/api/international-qualification/export/dirty');
+    emit('log', `Exported ${dirtyRowCount.value} international qualification dirty rows.`);
+  } catch (error) {
+    warningMessage.value = error.message || 'Export failed.';
   } finally {
     activeExportKey.value = '';
   }
@@ -759,56 +814,111 @@ async function exportCountryDetail() {
   activeExportKey.value = 'country';
   try {
     await yieldToBrowser();
-    exportInternationalCountryQualificationRecords(selectedCountry.value, filteredCountryRows.value);
+    await downloadInternationalExport('/api/international-qualification/export/country', {
+      country: selectedCountry.value,
+      filters: cloneFilters(appliedFilters)
+    });
     emit('log', `Exported ${selectedCountry.value} qualification detail.`);
+  } catch (error) {
+    warningMessage.value = error.message || 'Export failed.';
   } finally {
     activeExportKey.value = '';
   }
 }
 
-function openCountryDetail(country) {
+async function openCountryDetail(country) {
   selectedCountry.value = country;
+  countryDetail.value = createEmptyCountryDetail();
+  const requestId = ++countryDetailRequestId;
+  try {
+    const detail = await requestInternationalApi('/api/international-qualification/country-detail', {
+      method: 'POST',
+      body: { country, filters: cloneFilters(appliedFilters) }
+    });
+    if (requestId === countryDetailRequestId && selectedCountry.value === country) {
+      countryDetail.value = detail;
+    }
+  } catch (error) {
+    if (requestId === countryDetailRequestId) {
+      warningMessage.value = error.message || 'Unable to load country detail.';
+    }
+  }
 }
 
 function closeCountryDetail() {
   selectedCountry.value = '';
+  countryDetail.value = createEmptyCountryDetail();
+  countryDetailRequestId += 1;
 }
 
 function getFilterOptions(key) {
-  return dynamicFilterOptions.value[key] || [];
+  return dynamicOptions.value[key] || [];
 }
 
-function refreshDashboard() {
-  dashboard.value = buildInternationalQualificationDashboard(records.value, appliedFilters);
-}
-
-async function saveCurrentDataset() {
-  if (!records.value.length) return;
-  await saveToolDataset(LOCAL_DATASET_KEYS.INTERNATIONAL_SERVICE_QUALIFICATION_MAP, {
-    records: records.value,
-    dirtyRows: dirtyRows.value,
-    warnings: importWarnings.value,
-    filters: cloneFilters(appliedFilters),
-    savedAt: new Date().toISOString()
+async function refreshDashboardFromBackend() {
+  const result = await requestInternationalApi('/api/international-qualification/query', {
+    method: 'POST',
+    body: { filters: cloneFilters(appliedFilters) }
   });
+  assignFilters(appliedFilters, result.filters || appliedFilters);
+  dashboard.value = result.dashboard || createEmptyDashboard();
 }
 
-async function loadSavedDataset() {
-  const record = await loadToolDataset(LOCAL_DATASET_KEYS.INTERNATIONAL_SERVICE_QUALIFICATION_MAP);
-  const payload = record?.payload;
-  if (!payload?.records?.length) return;
+async function loadBackendDataset() {
+  try {
+    const metadata = await requestInternationalApi('/api/international-qualification/dataset');
+    applyDatasetMetadata(metadata);
+    const savedFilters = normalizeSavedFilters(metadata.filters, allOptions);
+    assignFilters(draftFilters, savedFilters);
+    assignFilters(appliedFilters, savedFilters);
+    await refreshDashboardFromBackend();
+    scheduleFilterOptionRefresh(0);
+    warningMessage.value = dirtyRowCount.value
+      ? `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
+      : '';
+  } catch (error) {
+    // A first-time user has no local dataset yet, which is an expected state.
+    if (error.status && error.status !== 400 && error.status !== 404) {
+      warningMessage.value = error.message || 'Unable to load the local dataset.';
+    }
+  }
+}
 
-  records.value = payload.records;
-  dirtyRows.value = payload.dirtyRows || [];
-  importWarnings.value = payload.warnings || [];
-  replaceOptions(collectInternationalQualificationOptions(records.value));
-  const savedFilters = normalizeSavedFilters(payload.filters, allOptions);
-  assignFilters(draftFilters, savedFilters);
-  assignFilters(appliedFilters, savedFilters);
-  refreshDashboard();
-  warningMessage.value = dirtyRows.value.length
-    ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
-    : '';
+function applyDatasetMetadata(metadata) {
+  datasetMeta.value = {
+    recordCount: Number(metadata?.recordCount || 0),
+    dirtyRowCount: Number(metadata?.dirtyRowCount || 0),
+    updatedAt: metadata?.updatedAt || ''
+  };
+  dirtyRowCount.value = datasetMeta.value.dirtyRowCount;
+  importWarnings.value = metadata?.warnings || [];
+  replaceOptions(metadata?.allOptions || createEmptyOptions());
+}
+
+function scheduleFilterOptionRefresh(delay = FILTER_OPTION_DEBOUNCE_MS) {
+  clearTimeout(filterOptionTimer);
+  if (!hasData.value || loading.value || querying.value) return;
+  filterOptionTimer = setTimeout(() => {
+    refreshDynamicFilterOptions();
+  }, delay);
+}
+
+async function refreshDynamicFilterOptions() {
+  if (!hasData.value || loading.value || querying.value) return;
+  const requestId = ++filterOptionRequestId;
+  try {
+    const result = await requestInternationalApi('/api/international-qualification/filter-options', {
+      method: 'POST',
+      body: { filters: cloneFilters(draftFilters) }
+    });
+    if (requestId === filterOptionRequestId) {
+      dynamicOptions.value = result.options || createEmptyOptions();
+    }
+  } catch (error) {
+    if (requestId === filterOptionRequestId) {
+      dynamicOptions.value = cloneOptions(allOptions);
+    }
+  }
 }
 
 function normalizeSavedFilters(filters, options) {
@@ -824,22 +934,11 @@ function normalizeSavedFilters(filters, options) {
   return normalized;
 }
 
-function pruneDraftFilters() {
-  filterFields.forEach((field) => {
-    const options = getFilterOptions(field.key);
-    const optionSet = new Set(options);
-    const current = draftFilters[field.key] || [];
-    const selected = current.filter((value) => optionSet.has(value));
-    if (selected.length !== current.length) {
-      draftFilters[field.key] = selected;
-    }
-  });
-}
-
 function replaceOptions(options) {
   filterFields.forEach((field) => {
     allOptions[field.key] = [...(options[field.key] || [])];
   });
+  dynamicOptions.value = cloneOptions(allOptions);
 }
 
 function assignFilters(target, source) {
@@ -863,8 +962,105 @@ function cloneFilters(filters) {
   };
 }
 
+function cloneOptions(options) {
+  return Object.fromEntries(filterFields.map((field) => [field.key, [...(options[field.key] || [])]]));
+}
+
 function createEmptyOptions() {
   return cloneFilters(DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS);
+}
+
+function createEmptyDatasetMetadata() {
+  return {
+    recordCount: 0,
+    dirtyRowCount: 0,
+    updatedAt: ''
+  };
+}
+
+function createEmptyDashboard() {
+  return {
+    filteredRecordCount: 0,
+    summary: {
+      totalPeople: 0,
+      validQualifications: 0,
+      totalQualifications: 0,
+      coveredCountries: 0,
+      coveredPartners: 0
+    },
+    countryStats: [],
+    mapPoints: [],
+    topValidCountries: [],
+    topRiskCountries: [],
+    productLineDistribution: [],
+    subProductLineDistribution: [],
+    modelCategoryDistribution: [],
+    qualificationTypeDistribution: [],
+    expiryTrend: []
+  };
+}
+
+function createEmptyCountryDetail() {
+  return {
+    country: '',
+    recordCount: 0,
+    countryStat: null,
+    productLineDistribution: [],
+    subProductLineDistribution: [],
+    qualificationTypeDistribution: [],
+    expiryDistribution: []
+  };
+}
+
+async function requestInternationalApi(path, options = {}) {
+  const response = await fetch(path, {
+    method: options.method || 'GET',
+    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  if (!response.ok) {
+    let message = `Request failed (HTTP ${response.status}).`;
+    try {
+      const errorBody = await response.json();
+      message = errorBody?.detail || errorBody?.message || message;
+    } catch (_) {
+      // The service may return an empty response for a transport-level failure.
+    }
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  return response.json();
+}
+
+async function downloadInternationalExport(path, body = null) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!response.ok) {
+    let message = `Export failed (HTTP ${response.status}).`;
+    try {
+      const errorBody = await response.json();
+      message = errorBody?.detail || errorBody?.message || message;
+    } catch (_) {
+      // Keep the transport error when the response body cannot be parsed.
+    }
+    throw new Error(message);
+  }
+
+  const disposition = response.headers.get('content-disposition') || '';
+  const matchedName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  const fileName = matchedName || 'international_service_qualification_export.xlsx';
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function resetImportOverlay() {
@@ -928,7 +1124,7 @@ function guardExportPermission() {
   return false;
 }
 
-const interactionDisabled = computed(() => loading.value || Boolean(activeExportKey.value));
+const interactionDisabled = computed(() => loading.value || querying.value || Boolean(activeExportKey.value));
 
 function toggleBrowserFullscreen() {
   if (props.fullscreenActive) {
@@ -1117,6 +1313,9 @@ function formatShortNumber(value) {
 }
 
 function yieldToBrowser() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+  const schedule = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+    ? window.requestAnimationFrame.bind(window)
+    : (callback) => setTimeout(callback, 0);
+  return new Promise((resolve) => schedule(() => schedule(resolve)));
 }
 </script>

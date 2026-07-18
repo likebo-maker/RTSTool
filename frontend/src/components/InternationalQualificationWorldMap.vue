@@ -116,6 +116,9 @@ let registered = false;
 let previousFocusIndex = -1;
 
 const globalRegions = computed(() => getGlobalRegionGroups());
+const worldCountryNames = computed(() => (worldCountriesGeo.features || [])
+  .map((feature) => feature?.properties?.name)
+  .filter(Boolean));
 const regionColorMap = computed(() => new Map(globalRegions.value.map((region) => [region.name, region.color])));
 const countryRegionMap = computed(() => {
   const map = new Map();
@@ -236,7 +239,9 @@ function buildMapOption() {
       itemStyle: {
         color: getRiskColor(point.riskLevel),
         borderColor: '#e0f2fe',
-        borderWidth: 1
+        borderWidth: 1.2,
+        shadowBlur: 14,
+        shadowColor: getRiskColor(point.riskLevel)
       }
     }));
 
@@ -253,6 +258,7 @@ function buildMapOption() {
         return [
           `<strong>${data.country}</strong>`,
           `Secondary Region: ${data.secondaryRegion || '-'}`,
+          `Capital: ${data.capital || '-'}`,
           `Certified Engineers: ${data.totalPeople || 0}`,
           `Valid Qualifications: ${data.validQualifications || 0}`,
           `Expired: ${data.expiredQualifications || 0}`,
@@ -287,12 +293,29 @@ function buildMapOption() {
         name: 'Qualification Countries',
         type: 'effectScatter',
         coordinateSystem: 'geo',
+        zlevel: 4,
         data: scatterData,
         symbol: 'circle',
-        symbolSize: MAP_POINT_SYMBOL_SIZE,
+        symbolSize(value, params) {
+          if (params.data?.country === props.focusedCountry) return MAP_POINT_SYMBOL_SIZE.focused;
+          if (params.data?.country === props.selectedCountry) return MAP_POINT_SYMBOL_SIZE.selected;
+          return MAP_POINT_SYMBOL_SIZE.normal;
+        },
         rippleEffect: {
           brushType: 'stroke',
-          scale: 2.4
+          scale: 3.4,
+          period: 4
+        },
+        itemStyle: {
+          color(params) {
+            return getRiskColor(params.data?.riskLevel);
+          },
+          borderColor: 'rgba(255,255,255,0.82)',
+          borderWidth: 1.2,
+          shadowBlur: 14,
+          shadowColor(params) {
+            return getRiskColor(params.data?.riskLevel);
+          }
         },
         label: {
           show: false
@@ -302,8 +325,7 @@ function buildMapOption() {
           label: {
             show: false
           }
-        },
-        zlevel: 2
+        }
       }
     ]
   };
@@ -311,16 +333,26 @@ function buildMapOption() {
 
 function buildGeoRegions() {
   const selectedSet = new Set(props.selectedRegions || []);
-  const hasSelectedRegions = selectedSet.size > 0;
-  return [...countryRegionMap.value.entries()].map(([country, regionName]) => {
+  const hasFocusedRegionScope = selectedSet.size > 0 && selectedSet.size < globalRegions.value.length;
+  const neutralAreaColor = hasFocusedRegionScope ? 'rgba(15, 23, 42, 0.28)' : 'rgba(15, 34, 61, 0.42)';
+  const neutralBorderColor = hasFocusedRegionScope ? 'rgba(103, 232, 255, 0.2)' : 'rgba(103, 232, 255, 0.32)';
+  return worldCountryNames.value.map((country) => {
+    const regionName = countryRegionMap.value.get(country);
     const color = regionColorMap.value.get(regionName) || '#38bdf8';
-    const selected = !hasSelectedRegions || selectedSet.has(regionName);
+    const selected = Boolean(regionName) && (!hasFocusedRegionScope || selectedSet.has(regionName));
     return {
       name: country,
       itemStyle: {
-        areaColor: selected ? `${color}22` : 'rgba(15, 23, 42, 0.42)',
-        borderColor: selected ? `${color}88` : 'rgba(71, 85, 105, 0.24)',
-        opacity: selected ? 1 : 0.45
+        areaColor: selected ? `${color}26` : neutralAreaColor,
+        borderColor: selected ? `${color}88` : neutralBorderColor,
+        opacity: selected ? 1 : 0.62
+      },
+      emphasis: {
+        itemStyle: {
+          areaColor: selected ? `${color}44` : 'rgba(15, 34, 61, 0.5)',
+          borderColor: selected ? '#67e8f9' : 'rgba(103, 232, 255, 0.42)'
+        },
+        label: { show: false }
       }
     };
   });

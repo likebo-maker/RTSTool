@@ -1,4 +1,4 @@
-import { resolveWorldCountryCentroid } from './globalRegionMap';
+import { resolveWorldCountryCapital } from './globalRegionMap';
 
 export const DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS = {
   secondaryRegions: [],
@@ -22,14 +22,28 @@ export function collectInternationalQualificationOptions(records) {
 
 export function buildInternationalDynamicFilterOptions(records, filters, fallbackOptions = null) {
   const baseOptions = fallbackOptions || collectInternationalQualificationOptions(records);
-  return {
-    secondaryRegions: restrictOptions(baseOptions.secondaryRegions, collectFieldOptions(records, filters, 'secondaryRegions', 'secondaryRegion')),
-    countries: restrictOptions(baseOptions.countries, collectFieldOptions(records, filters, 'countries', 'country')),
-    productLines: restrictOptions(baseOptions.productLines, collectFieldOptions(records, filters, 'productLines', 'productLine')),
-    subProductLines: restrictOptions(baseOptions.subProductLines, collectFieldOptions(records, filters, 'subProductLines', 'subProductLine')),
-    modelCategories: restrictOptions(baseOptions.modelCategories, collectFieldOptions(records, filters, 'modelCategories', 'modelCategory')),
-    qualificationTypes: restrictOptions(baseOptions.qualificationTypes, collectFieldOptions(records, filters, 'qualificationTypes', 'qualificationType'))
-  };
+  const selectedSets = buildDynamicSelectedSets(filters, baseOptions);
+  const buckets = Object.fromEntries(INTERNATIONAL_FILTER_FIELDS.map((field) => [field.key, new Set()]));
+
+  records.forEach((record) => {
+    INTERNATIONAL_FILTER_FIELDS.forEach((targetField) => {
+      for (const field of INTERNATIONAL_FILTER_FIELDS) {
+        if (field.key === targetField.key) continue;
+        const selectedSet = selectedSets[field.key];
+        if (!selectedSet?.size) continue;
+        if (!selectedSet.has(record[field.recordField])) return;
+      }
+      const value = record[targetField.recordField];
+      if (value) buckets[targetField.key].add(value);
+    });
+  });
+
+  return Object.fromEntries(
+    INTERNATIONAL_FILTER_FIELDS.map((field) => [
+      field.key,
+      restrictOptions(baseOptions[field.key] || [], [...buckets[field.key]])
+    ])
+  );
 }
 
 export function applyInternationalQualificationFilters(records, filters = DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS, options = {}) {
@@ -144,25 +158,49 @@ function buildCountryStat(country, records) {
 }
 
 function buildInternationalMapPoint(item) {
-  const coords = resolveWorldCountryCentroid(item.country);
-  if (!coords) return null;
+  const capital = resolveWorldCountryCapital(item.country);
+  if (!capital?.coords) return null;
   return {
     ...item,
     region: item.secondaryRegion,
-    coords,
-    geoSource: 'offline-world'
+    capital: capital.capital,
+    coords: capital.coords,
+    geoSource: 'capital-coordinate'
   };
-}
-
-function collectFieldOptions(records, filters, skipField, recordField) {
-  return sortTextValues(uniqueValues(
-    applyInternationalQualificationFilters(records, filters, { skipField }).map((record) => record[recordField])
-  ));
 }
 
 function restrictOptions(baseOptions, dynamicOptions) {
   const dynamicSet = new Set(dynamicOptions);
   return baseOptions.filter((option) => dynamicSet.has(option));
+}
+
+const INTERNATIONAL_FILTER_FIELDS = [
+  { key: 'secondaryRegions', recordField: 'secondaryRegion' },
+  { key: 'countries', recordField: 'country' },
+  { key: 'productLines', recordField: 'productLine' },
+  { key: 'subProductLines', recordField: 'subProductLine' },
+  { key: 'modelCategories', recordField: 'modelCategory' },
+  { key: 'qualificationTypes', recordField: 'qualificationType' }
+];
+
+function buildDynamicSelectedSets(filters, baseOptions) {
+  return Object.fromEntries(
+    INTERNATIONAL_FILTER_FIELDS.map((field) => [
+      field.key,
+      buildEffectiveDynamicSelectedSet(filters?.[field.key] || [], baseOptions?.[field.key] || [])
+    ])
+  );
+}
+
+function buildEffectiveDynamicSelectedSet(selectedValues, baseValues) {
+  const base = (baseValues || []).filter(Boolean);
+  const selected = (selectedValues || []).filter(Boolean);
+  if (!selected.length) return new Set();
+
+  const baseSet = new Set(base);
+  const selectedSet = new Set(selected.filter((value) => baseSet.has(value)));
+  const allBaseSelected = base.length > 0 && base.every((value) => selectedSet.has(value));
+  return allBaseSelected ? new Set() : selectedSet;
 }
 
 function matchesMultiSelect(value, selectedValues) {

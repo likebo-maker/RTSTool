@@ -25,7 +25,7 @@
           multiple
           @change="handleFileImport"
         />
-        <button class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="18" />
           <span>导入资质表</span>
         </button>
@@ -74,7 +74,7 @@
           multiple
           @change="handleFileImport"
         />
-        <button class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
+        <button v-if="allowImport" class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter">
           <Upload :size="16" />
           <span>导入资质表</span>
         </button>
@@ -536,10 +536,14 @@ const props = defineProps({
   embedded: {
     type: Boolean,
     default: false
+  },
+  allowImport: {
+    type: Boolean,
+    default: true
   }
 });
 
-const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen']);
+const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen', 'dataset-updated']);
 
 const TOP_LIST_LIMIT = 10;
 const CHART_TOP_LIMIT = 10;
@@ -677,7 +681,7 @@ function isHiddenImportWarning(warning) {
 
 const dashboard = computed(() => dashboardState.value);
 const hasData = computed(() => Boolean(importedRecords.value.length));
-const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的资质数据，请调整筛选条件。' : '请导入资质表'));
+const emptyStateText = computed(() => (hasData.value ? '暂无符合条件的资质数据，请调整筛选条件。' : '请在全球数据页导入中国区服务资质数据。'));
 const interactionDisabled = computed(() => loading.value || importOverlay.visible);
 const dataStatusText = computed(() => {
   if (!hasData.value) return '待导入资质数据';
@@ -1127,8 +1131,10 @@ async function handleFileImport(event) {
     resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP, {
       records: importedRecords.value,
-      warnings: importWarnings.value
+      warnings: importWarnings.value,
+      importedAt: new Date().toISOString()
     });
+    emit('dataset-updated');
     await nextTick();
     updateImportOverlayStep('generate', 'completed', 100, '导入完成');
     importOverlay.mode = 'success';
@@ -1146,6 +1152,12 @@ async function handleFileImport(event) {
     event.target.value = '';
   }
 }
+
+async function importFiles(files) {
+  await handleFileImport({ target: { files, value: '' } });
+}
+
+defineExpose({ importFiles });
 
 function applyFilters() {
   const validation = validateDraftFilters();

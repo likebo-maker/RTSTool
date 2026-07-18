@@ -12,6 +12,7 @@ const WORLD_COUNTRY_BY_KEY = new Map(
 const COUNTRY_ALIAS_MAP = new Map();
 const REGION_ALIAS_MAP = new Map();
 const COUNTRY_REGION_MAP = new Map();
+const COUNTRY_CAPITAL_MAP = new Map();
 const COUNTRY_CENTROID_CACHE = new Map();
 
 (globalRegionConfig.countryAliases || []).forEach((item) => {
@@ -34,6 +35,18 @@ Object.entries(globalRegionConfig.regionAliases || {}).forEach(([alias, region])
   (region.countries || []).forEach((country) => {
     if (!country || COUNTRY_REGION_MAP.has(country)) return;
     COUNTRY_REGION_MAP.set(country, region.name);
+  });
+});
+
+Object.entries(globalRegionConfig.countryCapitals || {}).forEach(([country, capital]) => {
+  if (!country || !Array.isArray(capital?.coords) || capital.coords.length < 2) return;
+  const lng = Number(capital.coords[0]);
+  const lat = Number(capital.coords[1]);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+  COUNTRY_CAPITAL_MAP.set(normalizeGlobalKey(country), {
+    country,
+    capital: capital.capital || country,
+    coords: [lng, lat]
   });
 });
 
@@ -71,6 +84,17 @@ export function resolveCountrySecondaryRegion(country) {
 
 export function hasWorldCountryGeometry(country) {
   return Boolean(getWorldCountryFeature(country));
+}
+
+export function hasCountryCapitalCoordinate(country) {
+  return Boolean(resolveWorldCountryCapital(country));
+}
+
+export function resolveWorldCountryCapital(country) {
+  const resolvedCountry = resolveGlobalCountry(country) || country;
+  return COUNTRY_CAPITAL_MAP.get(normalizeGlobalKey(resolvedCountry)) ||
+    COUNTRY_CAPITAL_MAP.get(normalizeGlobalKey(country)) ||
+    null;
 }
 
 export function getWorldCountryFeature(country) {

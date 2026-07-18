@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { buildQualificationStatus, formatDateText } from './qualificationTypes';
 import {
   hasChineseText,
+  hasCountryCapitalCoordinate,
   hasWorldCountryGeometry,
   resolveCountrySecondaryRegion,
   resolveGlobalCountry,
@@ -224,6 +225,10 @@ function buildRecordFromRow({ row, columnIndexMap, fileName, sheetName, rowNumbe
 
   if (!hasWorldCountryGeometry(country)) {
     return createDirtyResult(dirtyContext, `Country is missing in offline world map: ${country}`);
+  }
+
+  if (!hasCountryCapitalCoordinate(country)) {
+    return createDirtyResult(dirtyContext, `Missing capital coordinate: ${country}`);
   }
 
   const statusMeta = buildQualificationStatus(expiryRaw);
