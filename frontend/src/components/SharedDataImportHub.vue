@@ -1,6 +1,24 @@
 <template>
   <section class="glass-panel shared-data-import-hub" :class="{ compact }">
-    <div class="shared-data-import-hub-head">
+    <div v-if="compact" class="shared-data-compact-bar">
+      <div class="shared-data-compact-summary">
+        <p class="section-kicker">{{ kicker }}</p>
+        <div class="shared-data-compact-sources" aria-label="Shared dataset status">
+          <span v-for="source in sources" :key="`compact-${source.key}`" class="shared-data-compact-source" :class="{ ready: source.ready, blocked: source.blocked }">
+            <span class="shared-data-compact-dot"></span>
+            <strong>{{ source.shortLabel || source.label }}</strong>
+            <span>{{ compactSourceStatus(source) }}</span>
+          </span>
+        </div>
+      </div>
+      <button class="primary-button shared-data-compact-import" type="button" :disabled="Boolean(activeImportKey)" @click="dialogVisible = true">
+        <Upload :size="16" />
+        <span>Import Data</span>
+      </button>
+    </div>
+
+    <template v-else>
+      <div class="shared-data-import-hub-head">
       <div>
         <p class="section-kicker">{{ kicker }}</p>
         <h2>{{ title }}</h2>
@@ -10,31 +28,32 @@
         <Upload :size="18" />
         <span>Import Data</span>
       </button>
-    </div>
+      </div>
 
-    <div class="shared-data-source-list" aria-label="Shared datasets">
-      <article v-for="source in sources" :key="source.key" class="shared-data-source-row" :class="{ ready: source.ready, blocked: source.blocked }">
-        <div class="shared-data-source-icon" :class="source.ready ? 'ready' : 'waiting'">
-          <CheckCircle2 v-if="source.ready" :size="20" />
-          <Database v-else :size="20" />
-        </div>
-        <div class="shared-data-source-copy">
-          <strong>{{ source.label }}</strong>
-          <span>{{ source.description }}</span>
-          <small v-if="source.blocked">{{ source.blockedMessage }}</small>
-        </div>
-        <div class="shared-data-source-meta">
-          <strong>{{ source.ready ? formatNumber(source.recordCount) : 'Not imported' }}</strong>
-          <span>{{ source.ready ? source.recordLabel : 'Shared data source' }}</span>
-        </div>
-        <div class="shared-data-source-update">
-          <span>{{ source.ready ? 'Last updated' : 'Status' }}</span>
-          <strong>{{ source.ready ? formatDate(source.updatedAt) : (source.blocked ? 'Blocked' : 'Waiting for import') }}</strong>
-        </div>
-      </article>
-    </div>
+      <div class="shared-data-source-list" aria-label="Shared datasets">
+        <article v-for="source in sources" :key="source.key" class="shared-data-source-row" :class="{ ready: source.ready, blocked: source.blocked }">
+          <div class="shared-data-source-icon" :class="source.ready ? 'ready' : 'waiting'">
+            <CheckCircle2 v-if="source.ready" :size="20" />
+            <Database v-else :size="20" />
+          </div>
+          <div class="shared-data-source-copy">
+            <strong>{{ source.label }}</strong>
+            <span>{{ source.description }}</span>
+            <small v-if="source.blocked">{{ source.blockedMessage }}</small>
+          </div>
+          <div class="shared-data-source-meta">
+            <strong>{{ source.ready ? formatNumber(source.recordCount) : 'Not imported' }}</strong>
+            <span>{{ source.ready ? source.recordLabel : 'Shared data source' }}</span>
+          </div>
+          <div class="shared-data-source-update">
+            <span>{{ source.ready ? 'Last updated' : 'Status' }}</span>
+            <strong>{{ source.ready ? formatDate(source.updatedAt) : (source.blocked ? 'Blocked' : 'Waiting for import') }}</strong>
+          </div>
+        </article>
+      </div>
 
-    <p class="shared-data-import-hub-note">{{ note }}</p>
+      <p class="shared-data-import-hub-note">{{ note }}</p>
+    </template>
 
     <Teleport to="body">
       <div v-if="dialogVisible" class="shared-data-import-backdrop" @click.self="closeDialog">
@@ -110,5 +129,11 @@ function formatDate(value) {
     minute: '2-digit',
     hour12: false
   }).format(date);
+}
+
+function compactSourceStatus(source) {
+  if (source.ready) return `${formatNumber(source.recordCount)} ${source.recordLabel}`;
+  if (source.blocked) return 'Blocked';
+  return 'Not imported';
 }
 </script>

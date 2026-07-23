@@ -3,6 +3,7 @@ import {
   resolveInternationalTrainingCountry,
   resolveInternationalTrainingLocation,
   resolveInternationalTrainingRegion,
+  classifyInternationalTrainingContractStatus,
   normalizeInternationalTrainingConstructionRecord,
   splitCertifiedCourses,
   splitCertifiedProductLines
@@ -109,6 +110,9 @@ export async function parseInternationalTrainingConstructionFiles(fileList, opti
       if (location.source === 'capital-coordinate') locationSummary.capitalCoordinate += 1;
       if (location.source === 'capital-fallback') locationSummary.capitalFallback += 1;
 
+      // A center can expand into several product-line/course records. Resolve
+      // its contract category once here so every expanded record stays aligned.
+      const contract = classifyInternationalTrainingContractStatus(values.contractStatus);
       const centerBase = {
         id: `${file.name}-${source.sheetName}-${rowIndex + 1}`,
         centerName: values.centerName,
@@ -122,8 +126,9 @@ export async function parseInternationalTrainingConstructionFiles(fileList, opti
         geoSource: location.source,
         centerType: values.centerType,
         applicant: values.applicant,
-        contractStatus: values.contractStatus,
-        isSigned: values.contractStatus === '已签约',
+        contractStatus: contract.contractStatus,
+        isSigned: contract.isSigned,
+        isInternal: contract.isInternal,
         contact: values.contact,
         chairs: values.chairs,
         samples: values.samples,

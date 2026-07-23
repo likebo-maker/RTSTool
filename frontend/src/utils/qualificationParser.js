@@ -47,6 +47,7 @@ export async function parseQualificationFiles(fileList, options = {}) {
   const reportProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
   const records = [];
   const warnings = [];
+  const dirtyRows = [];
   const unmatchedBranchSamples = new Set();
   let unmatchedBranchCount = 0;
 
@@ -88,6 +89,12 @@ export async function parseQualificationFiles(fileList, options = {}) {
       const headerRowIndex = findHeaderRowIndex(worksheet, range);
       if (headerRowIndex === -1) {
         warnings.push(`${file.name} / ${sheetName} 未识别到有效表头，已跳过`);
+        dirtyRows.push(createQualificationDirtyRow({
+          sourceFile: file.name,
+          sourceSheet: sheetName,
+          sourceRow: range.s.r + 1,
+          rawData: {}
+        }, '未识别到有效表头，无法读取中国区服务资质数据。'));
         continue;
       }
 
@@ -96,6 +103,12 @@ export async function parseQualificationFiles(fileList, options = {}) {
       const missingCoreFields = getMissingCoreFields(columnIndexMap);
       if (missingCoreFields.length) {
         warnings.push(`${file.name} / ${sheetName} 缺少关键字段：${missingCoreFields.join('、')}，已跳过`);
+        dirtyRows.push(createQualificationDirtyRow({
+          sourceFile: file.name,
+          sourceSheet: sheetName,
+          sourceRow: headerRowIndex + 1,
+          rawData: Object.fromEntries(headerRow.map((header, index) => [String(header || `列${index + 1}`).trim(), '']))
+        }, `缺少关键字段：${missingCoreFields.join('、')}。`));
         continue;
       }
 
@@ -132,6 +145,14 @@ export async function parseQualificationFiles(fileList, options = {}) {
         if (!record) continue;
         if (record.__skipReason === 'unmatchedBranch') {
           unmatchedBranchCount += 1;
+          // Keep the entire original row only for excluded records. The normal
+          // import path stays sparse and fast even for very large workbooks.
+          dirtyRows.push(createQualificationDirtyRow({
+            sourceFile: file.name,
+            sourceSheet: sheetName,
+            sourceRow: rowIndex + 1,
+            rawData: buildRawData(headerRow, getRowValues(worksheet, rowIndex, range))
+          }, '未能按离线规则匹配到六个大区内的分公司。'));
           if (unmatchedBranchSamples.size < 10) {
             unmatchedBranchSamples.add(record.contractorName || record.rawBranch || `${sheetName} 第 ${rowIndex + 1} 行`);
           }
@@ -180,8 +201,27 @@ export async function parseQualificationFiles(fileList, options = {}) {
 
   return {
     records,
-    warnings
+    warnings,
+    dirtyRows
   };
+}
+
+function createQualificationDirtyRow(context, reason) {
+  return {
+    category: '未纳入统计',
+    reason,
+    sourceFile: context.sourceFile || '',
+    sourceSheet: context.sourceSheet || '',
+    sourceRow: context.sourceRow || '',
+    rawData: context.rawData || {}
+  };
+}
+
+function buildRawData(headers, row) {
+  return Object.fromEntries((headers || []).map((header, index) => [
+    String(header || `列${index + 1}`).trim(),
+    row?.[index] ?? ''
+  ]));
 }
 
 function buildRecordFromRow({ row, columnIndexMap, fileName, sheetName, rowNumber }) {

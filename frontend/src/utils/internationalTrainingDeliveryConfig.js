@@ -30,10 +30,29 @@ export function resolveInternationalTrainingDeliveryProductLine(value) {
   return productLineMap.get(normalizeGlobalKey(value)) || UNMAPPED_PRODUCT_LINE;
 }
 
+export function normalizeInternationalTrainingDeliveryRecord(record) {
+  const trainingCenter = String(record?.trainingLocation || record?.organizer || '').trim();
+  return {
+    ...record,
+    // Training Location is the delivery center name. Preserve the old source
+    // organizer separately for traceability, but never use it to split map dots.
+    organizer: trainingCenter,
+    sourceOrganizer: record?.sourceOrganizer || record?.organizer || '',
+    pointKey: normalizeGlobalKey(trainingCenter)
+  };
+}
+
+export function normalizeInternationalTrainingDeliveryRecords(records) {
+  return (records || []).map(normalizeInternationalTrainingDeliveryRecord);
+}
+
 export function resolveInternationalTrainingDeliveryLocation({ trainingLocation, constructionRecords = [] }) {
   const rawLocation = String(trainingLocation || '').trim();
   if (!rawLocation) return null;
 
+  // Prefer the construction map because its center name supplies the governed
+  // country, city, and offline coordinates. The country-capital rule remains a
+  // fallback for locations that are intentionally maintained as country names.
   const constructionCenter = findConstructionCenter(rawLocation, constructionRecords);
   if (constructionCenter) {
     return {

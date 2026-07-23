@@ -1,5 +1,11 @@
 <template>
-  <div class="tool-page qualification-page training-center-map-page" :class="{ 'fullscreen-workspace': fullscreenActive }">
+  <div
+    class="tool-page qualification-page training-center-map-page"
+    :class="{
+      'fullscreen-workspace': fullscreenActive,
+      'global-merged-fullscreen-workspace': fullscreenActive && isGlobalScopeActive
+    }"
+  >
     <section v-if="!fullscreenActive" class="glass-panel training-center-tab-panel">
       <div>
         <p class="section-kicker">Training Center Map</p>
@@ -56,7 +62,7 @@
     />
 
     <SharedDataImportHub
-      v-if="activeTab === 'construction' && activeConstructionScope === 'global'"
+      v-if="activeTab === 'construction' && activeConstructionScope === 'global' && !fullscreenActive"
       compact
       kicker="GLOBAL TRAINING CENTER CONSTRUCTION"
       title="Global Training Center Construction Data"
@@ -73,12 +79,15 @@
       title="Global Training Center Construction Map"
       description="China and International training centers are displayed together. Identical center name, country, and city values are merged into one location."
       :active="active"
+      :fullscreen-active="fullscreenActive && activeTab === 'construction' && activeConstructionScope === 'global'"
       :loading="globalConstructionLoading"
       :points="globalConstructionSnapshot.points"
       :metrics="globalConstructionSnapshot.metrics"
       :ranking-title="globalConstructionSnapshot.rankingTitle"
       :ranking-metric-label="globalConstructionSnapshot.rankingMetricLabel"
       empty-text="Import China or International construction data to display the global map."
+      @enter-fullscreen="$emit('enter-fullscreen')"
+      @exit-fullscreen="$emit('exit-fullscreen')"
     />
 
     <TrainingConstructionMap
@@ -114,7 +123,7 @@
     />
 
     <SharedDataImportHub
-      v-if="activeTab === 'delivery' && activeDeliveryScope === 'global'"
+      v-if="activeTab === 'delivery' && activeDeliveryScope === 'global' && !fullscreenActive"
       compact
       kicker="GLOBAL TRAINING CENTER DELIVERY"
       title="Global Training Center Delivery Data"
@@ -131,12 +140,15 @@
       title="Global Training Center Delivery Map"
       description="Matched China and International delivery locations are combined while preserving their original data source."
       :active="active"
+      :fullscreen-active="fullscreenActive && activeTab === 'delivery' && activeDeliveryScope === 'global'"
       :loading="globalDeliveryLoading"
       :points="globalDeliverySnapshot.points"
       :metrics="globalDeliverySnapshot.metrics"
       :ranking-title="globalDeliverySnapshot.rankingTitle"
       :ranking-metric-label="globalDeliverySnapshot.rankingMetricLabel"
       empty-text="Import construction data first, then import China or International delivery data to display the global map."
+      @enter-fullscreen="$emit('enter-fullscreen')"
+      @exit-fullscreen="$emit('exit-fullscreen')"
     />
 
     <InternationalTrainingDeliveryMap
@@ -205,6 +217,10 @@ const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-full
 const activeTab = ref('construction');
 const activeConstructionScope = ref('global');
 const activeDeliveryScope = ref('global');
+const isGlobalScopeActive = computed(() => (
+  (activeTab.value === 'construction' && activeConstructionScope.value === 'global')
+  || (activeTab.value === 'delivery' && activeDeliveryScope.value === 'global')
+));
 const globalImportInputRef = ref(null);
 const chinaConstructionMapRef = ref(null);
 const internationalConstructionMapRef = ref(null);
@@ -228,6 +244,7 @@ const internationalDeliveryDataset = ref(createDatasetState());
 const constructionDataSources = computed(() => [
   {
     key: 'china-construction',
+    shortLabel: 'China',
     label: 'China Training Center Construction Data',
     description: 'Shared by the China Training Center Construction Map.',
     recordLabel: 'center-course relations',
@@ -235,6 +252,7 @@ const constructionDataSources = computed(() => [
   },
   {
     key: 'international-construction',
+    shortLabel: 'International',
     label: 'International Training Center Construction Data',
     description: 'Shared by the International Training Center Construction Map.',
     recordLabel: 'center-course relations',
@@ -245,6 +263,7 @@ const constructionDataSources = computed(() => [
 const deliveryDataSources = computed(() => [
   {
     key: 'china-delivery',
+    shortLabel: 'China',
     label: 'China Training Center Delivery Data',
     description: 'Shared by the China Training Center Delivery Map.',
     recordLabel: 'training records',
@@ -254,6 +273,7 @@ const deliveryDataSources = computed(() => [
   },
   {
     key: 'international-delivery',
+    shortLabel: 'International',
     label: 'International Training Center Delivery Data',
     description: 'Shared by the International Training Center Delivery Map.',
     recordLabel: 'training records',

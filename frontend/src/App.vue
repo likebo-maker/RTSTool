@@ -201,6 +201,7 @@ const licenseStatusInfo = ref({});
 const licenseBootMessage = ref('正在读取本机授权状态...');
 const isBrowserFullscreen = ref(false);
 const fullscreenMessage = ref('');
+let fullscreenStateMonitor = null;
 const unauthorizedModal = reactive({
   visible: false,
   featureName: ''
@@ -221,6 +222,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  stopFullscreenStateMonitor();
 });
 
 watch(
@@ -369,13 +371,26 @@ async function enterBrowserFullscreen() {
     fullscreenMessage.value = '当前页面不支持全屏工作模式。';
     return;
   }
+  if (!canRequestBrowserFullscreen()) {
+    // A few embedded browser shells expose requestFullscreen but do not expose
+    // a functioning Fullscreen API. Reject those shells before they can leave
+    // the page in a false "Exit Fullscreen" visual state.
+    syncBrowserFullscreenState();
+    fullscreenMessage.value = '当前浏览器环境不支持全屏工作模式，请使用 Chrome、Edge 或按 F11 进入全屏。';
+    return;
+  }
 
   try {
     const target = document.documentElement;
     if (!document.fullscreenElement) {
       await target.requestFullscreen();
     }
-    isBrowserFullscreen.value = true;
+    // Some embedded browser shells briefly report fullscreen before declining it.
+    // Only change the workspace after two DOM checks confirm that fullscreen
+    // survived the browser's transition; a transient enter event is not enough.
+    if (!await confirmFullscreenStateAfterSettlement()) {
+      throw new Error('The browser did not enter fullscreen mode.');
+    }
     runtimeStatus.value = '已进入浏览器全屏工作模式';
   } catch (error) {
     fullscreenMessage.value = '请允许浏览器全屏，或按 F11 进入全屏模式。';
@@ -389,7 +404,8 @@ async function exitBrowserFullscreen() {
     if (document.fullscreenElement) {
       await document.exitFullscreen();
     }
-    isBrowserFullscreen.value = false;
+    await waitForFullscreenStateSettlement();
+    syncBrowserFullscreenState();
     runtimeStatus.value = '已退出浏览器全屏工作模式';
   } catch (error) {
     fullscreenMessage.value = '退出全屏失败，请按 ESC 或 F11 返回普通模式。';
@@ -398,10 +414,84 @@ async function exitBrowserFullscreen() {
 }
 
 function handleFullscreenChange() {
-  const fullscreenActive = Boolean(document.fullscreenElement);
-  isBrowserFullscreen.value = fullscreenActive && fullscreenSupportedTool.value;
+  // Some embedded browser shells emit an enter event before rejecting the
+  // fullscreen request. Confirm the state after the transition settles before
+  // changing the workspace layout or the button text.
+  if (document.fullscreenElement) {
+    void confirmFullscreenStateAfterSettlement();
+    return;
+  }
+  const fullscreenActive = syncBrowserFullscreenState();
   if (!fullscreenActive && runtimeStatus.value === '已进入浏览器全屏工作模式') {
     runtimeStatus.value = '已退出浏览器全屏工作模式';
   }
+}
+
+async function confirmFullscreenStateAfterSettlement() {
+  await waitForFullscreenStateSettlement();
+  if (!document.fullscreenElement) {
+    syncBrowserFullscreenState();
+    return false;
+  }
+
+  // A second confirmation catches embedded browser shells that accept the
+  // request briefly and then immediately return to normal browser chrome.
+  await new Promise((resolve) => window.setTimeout(resolve, 360));
+  const fullscreenActive = syncBrowserFullscreenState();
+  if (!fullscreenActive && runtimeStatus.value === '已进入浏览器全屏工作模式') {
+    runtimeStatus.value = '已退出浏览器全屏工作模式';
+  }
+  return fullscreenActive;
+}
+
+function syncBrowserFullscreenState() {
+  const fullscreenActive = Boolean(document.fullscreenElement) && fullscreenSupportedTool.value;
+  isBrowserFullscreen.value = fullscreenActive;
+  if (fullscreenActive) {
+    startFullscreenStateMonitor();
+  } else {
+    stopFullscreenStateMonitor();
+  }
+  return fullscreenActive;
+}
+
+function waitForFullscreenStateSettlement() {
+  return new Promise((resolve) => window.setTimeout(resolve, 650));
+}
+
+function canRequestBrowserFullscreen() {
+  return document.fullscreenEnabled === true
+    && typeof document.documentElement?.requestFullscreen === 'function';
+}
+
+function startFullscreenStateMonitor() {
+  if (fullscreenStateMonitor) return;
+
+  // Some embedded Chromium shells leave the page without dispatching the
+  // corresponding fullscreenchange event. While this workspace is rendered
+  // as fullscreen, regularly reconcile it against the browser DOM so the
+  // layout and the control label cannot remain stuck in "Exit Fullscreen".
+  const verifyState = () => {
+    fullscreenStateMonitor = null;
+    if (!isBrowserFullscreen.value) return;
+
+    if (!document.fullscreenElement || !fullscreenSupportedTool.value) {
+      syncBrowserFullscreenState();
+      if (runtimeStatus.value === '已进入浏览器全屏工作模式') {
+        runtimeStatus.value = '已退出浏览器全屏工作模式';
+      }
+      return;
+    }
+
+    fullscreenStateMonitor = window.setTimeout(verifyState, 180);
+  };
+
+  fullscreenStateMonitor = window.setTimeout(verifyState, 0);
+}
+
+function stopFullscreenStateMonitor() {
+  if (!fullscreenStateMonitor) return;
+  window.clearTimeout(fullscreenStateMonitor);
+  fullscreenStateMonitor = null;
 }
 </script>

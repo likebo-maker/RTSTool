@@ -3,11 +3,12 @@ import { hasWorldCountryGeometry } from './globalRegionMap';
 import { normalizeTrainingResult } from './trainingStatusNormalizer';
 import {
   resolveInternationalTrainingDeliveryLocation,
+  normalizeInternationalTrainingDeliveryRecord,
   resolveInternationalTrainingDeliveryProductLine,
   resolveInternationalTrainingDeliveryRegion
 } from './internationalTrainingDeliveryConfig';
 
-const REQUIRED_FIELDS = ['batchId', 'organizer', 'courseName', 'rawProductLine', 'secondaryRegion', 'trainingLocation', 'completion'];
+const REQUIRED_FIELDS = ['batchId', 'courseName', 'rawProductLine', 'secondaryRegion', 'trainingLocation', 'completion'];
 const FIELD_ALIASES = {
   batchId: ['班次ID'],
   organizer: ['培训组织方'],
@@ -127,12 +128,13 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
         if (location.geoSource === 'local-country-capital') locationSummary.localCountryCapital += 1;
         const result = normalizeTrainingResult(values.completion);
         const trainingCycle = resolveTrainingCycle(values);
-        const pointKey = `${normalizeKey(values.organizer)}|${normalizeKey(values.trainingLocation)}`;
-
-        records.push({
+        // The report's Training Location is the delivery-center identifier.
+        // It must be the map label and aggregation key so it stays consistent
+        // with the center name maintained by the construction map.
+        records.push(normalizeInternationalTrainingDeliveryRecord({
           id: `${file.name}-${sheetName}-${rowIndex + 1}`,
-          pointKey,
-          organizer: values.organizer,
+          organizer: values.trainingLocation,
+          sourceOrganizer: values.organizer,
           trainingLocation: values.trainingLocation,
           matchedConstructionCenter: location.matchedCenterName || '',
           secondaryRegion,
@@ -178,7 +180,7 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
           sourceSheet: sheetName,
           sourceRow: rowIndex + 1,
           rawData
-        });
+        }));
       }
     }
   }
@@ -237,10 +239,6 @@ function normalizeHeader(value) {
 
 function normalizeText(value) {
   return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\u3000/g, ' ').trim();
-}
-
-function normalizeKey(value) {
-  return normalizeText(value).toLowerCase().replace(/\s+/g, ' ');
 }
 
 function isBlankRow(row) {

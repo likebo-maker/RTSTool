@@ -1,14 +1,26 @@
 <template>
-  <section class="glass-panel global-merged-dashboard">
+  <section class="glass-panel global-merged-dashboard" :class="{ 'global-merged-dashboard-fullscreen': fullscreenActive }">
     <div class="global-merged-dashboard-head">
       <div>
         <p class="section-kicker">{{ kicker }}</p>
         <h2>{{ title }}</h2>
         <p>{{ description }}</p>
       </div>
-      <span class="status-pill" :class="points.length ? 'success' : 'warning'">
-        {{ points.length ? `${formatNumber(points.length)} mapped locations` : 'Waiting for mapped data' }}
-      </span>
+      <div class="global-merged-dashboard-actions">
+        <span class="status-pill" :class="points.length ? 'success' : 'warning'">
+          {{ points.length ? `${formatNumber(points.length)} mapped locations` : 'Waiting for mapped data' }}
+        </span>
+        <button
+          class="ghost-button fullscreen-toggle-button global-merged-fullscreen-button"
+          type="button"
+          :aria-label="fullscreenActive ? 'Exit Fullscreen' : 'Browser Fullscreen'"
+          @click="toggleFullscreen"
+        >
+          <Minimize2 v-if="fullscreenActive" :size="18" />
+          <Maximize2 v-else :size="18" />
+          <span>{{ fullscreenActive ? 'Exit Fullscreen' : 'Browser Fullscreen' }}</span>
+        </button>
+      </div>
     </div>
 
     <div class="global-merged-metric-grid">
@@ -97,7 +109,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as echarts from 'echarts';
-import { LoaderCircle, MapPinned, X } from 'lucide-vue-next';
+import { LoaderCircle, MapPinned, Maximize2, Minimize2, X } from 'lucide-vue-next';
 import worldCountriesGeo from '../data/worldCountriesGeo.json';
 import { MAP_POINT_SYMBOL_SIZE } from '../utils/offlineChinaMap';
 
@@ -109,10 +121,13 @@ const props = defineProps({
   metrics: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   active: { type: Boolean, default: true },
+  fullscreenActive: { type: Boolean, default: false },
   emptyText: { type: String, default: 'Import at least one regional dataset to display the merged map.' },
   rankingTitle: { type: String, default: 'Location TOP10' },
   rankingMetricLabel: { type: String, default: 'records' }
 });
+
+const emit = defineEmits(['enter-fullscreen', 'exit-fullscreen']);
 
 const WORLD_MAP_NAME = 'global-merged-offline-world';
 const SOURCE_COLORS = {
@@ -160,6 +175,13 @@ watch(() => props.active, async (active) => {
   await nextTick();
   renderChart();
   resizeChart();
+});
+watch(() => props.fullscreenActive, async () => {
+  // ECharts reads its container size at render time. Re-render after the
+  // browser fullscreen transition so the canvas fills the resized workspace.
+  await nextTick();
+  renderChart();
+  requestAnimationFrame(resizeChart);
 });
 
 function initializeChart() {
@@ -269,6 +291,10 @@ function handleChartClick(params) {
 
 function selectPoint(point) {
   selectedPoint.value = point;
+}
+
+function toggleFullscreen() {
+  emit(props.fullscreenActive ? 'exit-fullscreen' : 'enter-fullscreen');
 }
 
 function resizeChart() {

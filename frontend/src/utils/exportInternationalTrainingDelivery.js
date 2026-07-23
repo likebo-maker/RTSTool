@@ -4,8 +4,8 @@ export function exportInternationalTrainingDeliveryRecords(records, fileName = '
   writeWorkbook((records || []).map(toExportRow), 'Delivery Details', fileName);
 }
 
-export function exportInternationalTrainingDeliveryPointRecords(organizer, records) {
-  const safeName = String(organizer || 'training_organizer').replace(/[\\/:*?"<>|]/g, '_');
+export function exportInternationalTrainingDeliveryPointRecords(centerName, records) {
+  const safeName = String(centerName || 'training_center').replace(/[\\/:*?"<>|]/g, '_');
   exportInternationalTrainingDeliveryRecords(records, `${safeName}_delivery_details.xlsx`);
 }
 
@@ -23,7 +23,8 @@ export function exportInternationalTrainingDeliveryDirtyRows(dirtyRows) {
 
 function toExportRow(record) {
   return {
-    'Training Organizer': record.organizer || '',
+    'Training Center': record.organizer || '',
+    'Source Training Organizer': record.sourceOrganizer || '',
     'Training Location': record.trainingLocation || '',
     'Matched Construction Center': record.matchedConstructionCenter || '',
     'Secondary Region': record.secondaryRegion || '',

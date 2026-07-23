@@ -24,6 +24,20 @@ export function exportBranchQualificationRecords(branch, records) {
   exportQualificationRecords(records, `${safeBranch}_资质详情.xlsx`);
 }
 
+export function exportQualificationDirtyRows(dirtyRows, fileName = '中国区人员服务资质脏数据.xlsx') {
+  const rows = (dirtyRows || []).map((row) => ({
+    分类: row.category || '',
+    原因: row.reason || '',
+    来源文件: row.sourceFile || '',
+    来源Sheet: row.sourceSheet || '',
+    来源行号: row.sourceRow || '',
+    ...Object.fromEntries(
+      Object.entries(row.rawData || {}).map(([key, value]) => [`原始 - ${key}`, value])
+    )
+  }));
+  writeWorkbook(rows, '脏数据', fileName);
+}
+
 function writeWorkbook(rows, sheetName, fileName) {
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();

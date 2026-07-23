@@ -64,6 +64,8 @@ export function applyInternationalTrainingConstructionFilters(records, filters =
 
 export function buildInternationalTrainingConstructionDashboard(records, filters = DEFAULT_INTERNATIONAL_TRAINING_CONSTRUCTION_FILTERS) {
   const filteredRecords = applyInternationalTrainingConstructionFilters(records, filters);
+  // A center expands into center-course records. Contract totals must use the
+  // unique center layer so a multi-course center is counted only once.
   const centerStats = Object.entries(groupBy(filteredRecords, 'centerName'))
     .map(([centerName, centerRecords]) => buildCenterStat(centerName, centerRecords))
     .filter(Boolean);
@@ -76,7 +78,8 @@ export function buildInternationalTrainingConstructionDashboard(records, filters
     summary: {
       totalCenters: centerStats.length,
       signedCenters: centerStats.filter((item) => item.isSigned).length,
-      unsignedCenters: centerStats.filter((item) => !item.isSigned).length
+      unsignedCenters: centerStats.filter((item) => !item.isSigned && !item.isInternal).length,
+      internalCenters: centerStats.filter((item) => item.isInternal).length
     },
     centerStats,
     mapPoints: applyPointOffsets(centerStats.filter((item) => Array.isArray(item.coords) && item.coords.length >= 2)),
@@ -135,6 +138,7 @@ function buildCenterStat(centerName, records) {
     centerType: first.centerType || '',
     contractStatus: first.contractStatus || '',
     isSigned: Boolean(first.isSigned),
+    isInternal: Boolean(first.isInternal),
     productLines,
     courseNames,
     productLineCount: productLines.length,
@@ -153,7 +157,8 @@ function buildCountryStat(country, centerStats) {
     secondaryRegion: centerStats[0].secondaryRegion || '',
     centerCount: centerStats.length,
     signedCenters: centerStats.filter((item) => item.isSigned).length,
-    unsignedCenters: centerStats.filter((item) => !item.isSigned).length
+    unsignedCenters: centerStats.filter((item) => !item.isSigned && !item.isInternal).length,
+    internalCenters: centerStats.filter((item) => item.isInternal).length
   };
 }
 
@@ -166,7 +171,8 @@ function buildRegionDistribution(centerStats) {
       color: region.color,
       centerCount: centers.length,
       signedCenters: centers.filter((item) => item.isSigned).length,
-      unsignedCenters: centers.filter((item) => !item.isSigned).length
+      unsignedCenters: centers.filter((item) => !item.isSigned && !item.isInternal).length,
+      internalCenters: centers.filter((item) => item.isInternal).length
     };
   });
 }

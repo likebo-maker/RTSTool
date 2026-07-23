@@ -152,7 +152,8 @@ function buildTooltip(point) {
   if (!point?.organizer) return point?.name || '';
   return [
     `<strong>${escapeHtml(point.organizer)}</strong>`,
-    `Training Location: ${escapeHtml(point.trainingLocation || '-')}`,
+    `Training Center: ${escapeHtml(point.organizer || '-')}`,
+    `Matched Construction Center: ${escapeHtml(point.matchedConstructionCenter || '-')}`,
     `Secondary Region: ${escapeHtml(point.secondaryRegion || '-')}`,
     `Country: ${escapeHtml(point.country || '-')}`,
     `Map Location: ${escapeHtml(point.displayLocation || '-')}`,

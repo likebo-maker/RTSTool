@@ -13,6 +13,7 @@
         <input ref="fileInputRef" class="hidden-file-input" type="file" accept=".xlsx,.xls" multiple @change="handleFileImport" />
         <button v-if="allowImport" class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter"><Upload :size="18" /><span>Import Excel</span></button>
         <button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)" :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : ''" @click="exportCurrentResult"><LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="18" /><Download v-else :size="18" /><span>Export Current</span></button>
+        <button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled" :title="!canExportExcel ? 'Excel export is not enabled in the current license.' : ''" @click="exportDirtyRows"><LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="18" /><Download v-else :size="18" /><span>Export Dirty Data</span></button>
         <button class="ghost-button" type="button" :disabled="interactionDisabled" @click="resetFilters"><RotateCcw :size="18" /><span>Reset Filters</span></button>
         <button class="ghost-button fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen"><Minimize2 v-if="fullscreenActive" :size="18" /><Maximize2 v-else :size="18" /><span>{{ fullscreenActive ? 'Exit Fullscreen' : 'Browser Fullscreen' }}</span></button>
       </div>
@@ -23,8 +24,11 @@
       <div class="fullscreen-training-actions visible">
         <input ref="fileInputRef" class="hidden-file-input" type="file" accept=".xlsx,.xls" multiple @change="handleFileImport" />
         <button v-if="allowImport" class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter"><Upload :size="16" /><span>Import</span></button>
+        <button class="ghost-button compact" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)" @click="exportCurrentResult"><LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="16" /><Download v-else :size="16" /><span>Export Current</span></button>
+        <button class="ghost-button compact" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled" @click="exportDirtyRows"><LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="16" /><Download v-else :size="16" /><span>Export Dirty Data</span></button>
         <button class="ghost-button compact" :class="{ active: fullscreenFiltersOpen }" type="button" @click="fullscreenFiltersOpen = !fullscreenFiltersOpen"><Search :size="16" /><span>Filters</span></button>
-        <button class="ghost-button compact fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen"><Minimize2 :size="16" /><span>Exit</span></button>
+        <button class="ghost-button compact" type="button" :disabled="interactionDisabled" @click="resetFilters"><RotateCcw :size="16" /><span>Reset Filters</span></button>
+        <button class="ghost-button compact fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen"><Minimize2 :size="16" /><span>Exit Fullscreen</span></button>
       </div>
     </section>
 
@@ -104,7 +108,7 @@
             <div class="qualification-drawer-actions"><button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="!canExportExcel || Boolean(activeExportKey)" @click="exportCenterDetail"><LoaderCircle v-if="activeExportKey === 'center'" class="spin" :size="17" /><Download v-else :size="17" /><span>Export Detail</span></button><button class="icon-button" type="button" @click="closeCenterDetail"><X :size="18" /></button></div>
           </div>
           <div class="qualification-drawer-metrics">
-            <article class="metric-card blue"><Building2 :size="18" /><span>Contract Status</span><strong class="international-detail-status" :class="centerDetail.centerStat.isSigned ? 'signed' : 'unsigned'">{{ centerDetail.centerStat.isSigned ? 'Signed' : 'Unsigned' }}</strong></article>
+            <article class="metric-card blue"><Building2 :size="18" /><span>Contract Status</span><strong class="international-detail-status" :class="centerContractDisplay.className">{{ centerContractDisplay.label }}</strong></article>
             <article class="metric-card cyan"><Layers3 :size="18" /><span>Product Lines</span><strong>{{ centerDetail.centerStat.productLineCount }}</strong></article>
             <article class="metric-card green"><BookOpenCheck :size="18" /><span>Courses</span><strong>{{ centerDetail.centerStat.courseCount }}</strong></article>
           </div>
@@ -140,7 +144,7 @@ import {
   collectInternationalTrainingConstructionOptions,
   createAllInternationalTrainingConstructionFilters
 } from '../utils/internationalTrainingConstructionAggregator';
-import { exportInternationalTrainingConstructionCenterRecords, exportInternationalTrainingConstructionRecords } from '../utils/exportInternationalTrainingConstruction';
+import { exportInternationalTrainingConstructionCenterRecords, exportInternationalTrainingConstructionDirtyRows, exportInternationalTrainingConstructionRecords } from '../utils/exportInternationalTrainingConstruction';
 import { parseInternationalTrainingConstructionFiles } from '../utils/internationalTrainingConstructionParser';
 import { normalizeInternationalTrainingConstructionRecords } from '../utils/internationalTrainingConstructionConfig';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
@@ -179,9 +183,11 @@ const dataStatusText = computed(() => hasData.value ? `${dashboard.value.summary
 const metricCards = computed(() => [
   { key: 'total', label: 'Training Centers', value: dashboard.value.summary.totalCenters.toLocaleString('en-US'), icon: Building2, tone: 'blue' },
   { key: 'signed', label: 'Signed Centers', value: dashboard.value.summary.signedCenters.toLocaleString('en-US'), icon: BookOpenCheck, tone: 'green' },
-  { key: 'unsigned', label: 'Unsigned Centers', value: dashboard.value.summary.unsignedCenters.toLocaleString('en-US'), icon: AlertTriangle, tone: 'orange' }
+  { key: 'unsigned', label: 'Unsigned Centers', value: dashboard.value.summary.unsignedCenters.toLocaleString('en-US'), icon: AlertTriangle, tone: 'orange' },
+  { key: 'internal', label: 'Internal Centers', value: dashboard.value.summary.internalCenters.toLocaleString('en-US'), icon: Building2, tone: 'violet' }
 ]);
 const centerDetail = computed(() => selectedCenter.value ? buildInternationalTrainingConstructionCenterDetail(selectedCenter.value, dashboard.value.filteredRecords) : emptyCenterDetail());
+const centerContractDisplay = computed(() => getCenterContractDisplay(centerDetail.value.centerStat));
 const productLineBarOption = computed(() => buildBarOption(dashboard.value.productLineDistribution, 'Centers'));
 const centerProductLineOption = computed(() => buildBarOption(centerDetail.value.productLineDistribution, 'Relations', true));
 const centerCourseOption = computed(() => buildBarOption(centerDetail.value.courseDistribution, 'Relations', true));
@@ -257,6 +263,12 @@ function resetFiltersToAll() {
 function openCenterDetail(centerName) { selectedCenter.value = centerName; }
 function closeCenterDetail() { selectedCenter.value = ''; }
 
+function getCenterContractDisplay(center) {
+  if (center?.isSigned) return { label: 'Signed', className: 'signed' };
+  if (center?.isInternal) return { label: 'Internal (Mindray)', className: 'internal' };
+  return { label: 'Unsigned', className: 'unsigned' };
+}
+
 async function exportCurrentResult() {
   if (!guardExportPermission() || !dashboard.value.filteredRecords.length) return;
   activeExportKey.value = 'current';
@@ -272,6 +284,20 @@ async function exportCenterDetail() {
   try {
     await runWithMinimumVisibleTime(() => exportInternationalTrainingConstructionCenterRecords(selectedCenter.value, centerDetail.value.centerRecords));
     emit('log', `Exported international training center detail: ${selectedCenter.value}.`);
+  } finally { activeExportKey.value = ''; }
+}
+
+async function exportDirtyRows() {
+  if (!guardExportPermission()) return;
+  if (!dirtyRows.value.length) {
+    warningMessage.value = 'There is no dirty data to export from the latest import.';
+    emit('log', 'No international training construction dirty rows are available for export.');
+    return;
+  }
+  activeExportKey.value = 'dirty';
+  try {
+    await runWithMinimumVisibleTime(() => exportInternationalTrainingConstructionDirtyRows(dirtyRows.value));
+    emit('log', `Exported ${dirtyRows.value.length} international training construction dirty rows.`);
   } finally { activeExportKey.value = ''; }
 }
 

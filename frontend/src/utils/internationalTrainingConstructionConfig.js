@@ -90,12 +90,15 @@ export function splitCertifiedCourses(value) {
 }
 
 export function normalizeInternationalTrainingConstructionRecord(record) {
+  const contract = classifyInternationalTrainingContractStatus(record?.contractStatus);
   return {
     ...record,
     productLine: formatInternationalConstructionProductLine(record?.productLine),
     courseName: formatInternationalConstructionCourse(record?.courseName),
     centerType: formatInternationalConstructionCenterType(record?.centerType),
-    contractStatus: formatInternationalConstructionContractStatus(record?.contractStatus),
+    contractStatus: contract.contractStatus,
+    isSigned: contract.isSigned,
+    isInternal: contract.isInternal,
     auditResult: formatInternationalConstructionAuditResult(record?.auditResult)
   };
 }
@@ -120,6 +123,20 @@ export function formatInternationalConstructionContractStatus(value) {
     待签约: 'Pending Contract',
     未签约: 'Unsigned'
   }, 'Status not maintained');
+}
+
+export function classifyInternationalTrainingContractStatus(value) {
+  const raw = String(value || '').trim();
+  const normalized = normalizeGlobalKey(raw);
+  // The source workbook uses NA for a Mindray-owned center. It is neither a
+  // signed channel center nor an unsigned channel center, so classify it first.
+  const isInternal = normalized === 'na' || normalized === 'internalmindray';
+  const contractStatus = isInternal ? 'Internal (Mindray)' : formatInternationalConstructionContractStatus(raw);
+  return {
+    contractStatus,
+    isSigned: contractStatus === 'Signed',
+    isInternal
+  };
 }
 
 export function formatInternationalConstructionAuditResult(value) {

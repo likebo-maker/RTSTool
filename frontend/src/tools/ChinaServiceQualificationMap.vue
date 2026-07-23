@@ -39,11 +39,23 @@
         >
           <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="18" />
           <Download v-else :size="18" />
-          <span>导出当前结果</span>
+          <span>导出当前</span>
+        </button>
+        <button
+          class="ghost-button"
+          :class="{ locked: !canExportExcel }"
+          type="button"
+          :disabled="interactionDisabled || Boolean(activeExportKey)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+          @click="exportDirtyRows"
+        >
+          <LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="18" />
+          <Download v-else :size="18" />
+          <span>导出脏数据</span>
         </button>
         <button class="ghost-button" type="button" :disabled="interactionDisabled" @click="resetFilters">
           <RotateCcw :size="18" />
-          <span>重置筛选</span>
+          <span>重置筛选器</span>
         </button>
         <button class="ghost-button fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen">
           <Minimize2 v-if="fullscreenActive" :size="18" />
@@ -88,25 +100,32 @@
         >
           <LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="16" />
           <Download v-else :size="16" />
-          <span>导出当前结果</span>
-        </button>
-        <button class="ghost-button compact" :class="{ active: fullscreenFiltersOpen }" type="button" @click="fullscreenFiltersOpen = !fullscreenFiltersOpen">
-          <Search :size="16" />
-          <span>筛选器</span>
+          <span>导出当前</span>
         </button>
         <button
           class="ghost-button compact"
-          :class="{ active: presentationCarouselEnabled && !carouselPaused }"
+          :class="{ locked: !canExportExcel }"
           type="button"
-          @click="toggleCarouselPaused"
+          :disabled="interactionDisabled || Boolean(activeExportKey)"
+          :title="!canExportExcel ? '当前授权未开放该功能' : ''"
+          @click="exportDirtyRows"
         >
-          <Play v-if="carouselPaused" :size="16" />
-          <Pause v-else :size="16" />
-          <span>自动轮播（{{ carouselPaused ? '暂停' : '开启' }}）</span>
+          <LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="16" />
+          <Download v-else :size="16" />
+          <span>导出脏数据</span>
+        </button>
+        <button v-if="fullscreenActive" class="ghost-button compact" :class="{ active: fullscreenFiltersOpen }" type="button" @click="fullscreenFiltersOpen = !fullscreenFiltersOpen">
+          <Search :size="16" />
+          <span>筛选器</span>
+        </button>
+        <button class="ghost-button compact" type="button" :disabled="interactionDisabled" @click="resetFilters">
+          <RotateCcw :size="16" />
+          <span>重置筛选器</span>
         </button>
         <button class="ghost-button compact fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen">
-          <Minimize2 :size="16" />
-          <span>退出全屏</span>
+          <Minimize2 v-if="fullscreenActive" :size="16" />
+          <Maximize2 v-else :size="16" />
+          <span>{{ fullscreenActive ? '退出全屏' : '浏览器全屏' }}</span>
         </button>
       </div>
     </section>
@@ -493,8 +512,6 @@ import {
   Map as MapIcon,
   Maximize2,
   Minimize2,
-  Pause,
-  Play,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -516,7 +533,7 @@ import {
   DEFAULT_QUALIFICATION_FILTERS
 } from '../utils/qualificationAggregator';
 import { NO_CONTRACTOR_LABEL } from '../utils/qualificationBranchResolver';
-import { exportBranchQualificationRecords, exportQualificationRecords } from '../utils/qualificationExport';
+import { exportBranchQualificationRecords, exportQualificationDirtyRows, exportQualificationRecords } from '../utils/qualificationExport';
 import { parseQualificationFiles } from '../utils/qualificationParser';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
@@ -557,6 +574,7 @@ const loading = ref(false);
 const restoringView = ref(false);
 const reactivatingView = ref(false);
 const importedRecords = shallowRef([]);
+const dirtyRows = ref([]);
 const importWarnings = ref([]);
 const filterValidationMessage = ref('');
 const selectedBranch = ref('');
@@ -861,7 +879,9 @@ watch(
       fullscreenControlsVisible.value = false;
       fullscreenControlsHovering.value = false;
       clearFullscreenControlsTimer();
-      presentationCarouselEnabled.value = true;
+      // Fullscreen remains an inspection view. Do not start a hidden carousel
+      // after removing the user-facing automatic-play control.
+      presentationCarouselEnabled.value = false;
       carouselPaused.value = false;
       carouselLocked.value = false;
       activeSideTab.value = 'branch';
@@ -1123,6 +1143,7 @@ async function handleFileImport(event) {
     updateImportOverlayStep('generate', 'processing', 94, '正在生成离线地图点位...');
     await waitForPaint();
     importedRecords.value = markRaw(payload.records || []);
+    dirtyRows.value = payload.dirtyRows || [];
     importWarnings.value = payload.warnings || [];
     const allFilters = createAllFiltersFromOptions();
     Object.assign(draftFilters, allFilters);
@@ -1131,6 +1152,7 @@ async function handleFileImport(event) {
     resetSidePanelExpansion();
     await saveToolDataset(LOCAL_DATASET_KEYS.SERVICE_QUALIFICATION_MAP, {
       records: importedRecords.value,
+      dirtyRows: dirtyRows.value,
       warnings: importWarnings.value,
       importedAt: new Date().toISOString()
     });
@@ -1293,6 +1315,28 @@ function createDefaultFilters() {
     qualificationTypes: [],
     status: DEFAULT_QUALIFICATION_FILTERS.status
   };
+}
+
+async function exportDirtyRows() {
+  if (!props.canExportExcel) {
+    emit('feature-blocked', 'Excel导出');
+    return;
+  }
+  if (!dirtyRows.value.length) {
+    filterValidationMessage.value = '当前导入数据没有可导出的脏数据。';
+    emit('log', '当前导入数据没有可导出的脏数据');
+    return;
+  }
+  if (activeExportKey.value) return;
+  await runExportFeedback(
+    'dirty',
+    '正在导出脏数据',
+    '系统正在生成未纳入统计的原始资质数据 Excel，请不要重复点击导出按钮。',
+    () => {
+      exportQualificationDirtyRows(dirtyRows.value);
+      emit('log', `已导出 ${dirtyRows.value.length} 条资质脏数据`);
+    }
+  );
 }
 
 function refreshDashboard(filters = appliedFilters.value) {
@@ -1831,6 +1875,7 @@ async function loadLastDataset() {
     return;
   }
   importedRecords.value = markRaw(payload.records || []);
+  dirtyRows.value = payload.dirtyRows || [];
   importWarnings.value = payload.warnings || [];
   const allFilters = createAllFiltersFromOptions();
   Object.assign(draftFilters, allFilters);

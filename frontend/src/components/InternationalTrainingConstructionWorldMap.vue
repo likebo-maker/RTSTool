@@ -228,6 +228,7 @@ function applyFocus() {
 
 function getContractColor(point) {
   if (point?.isSigned) return '#22c55e';
+  if (point?.isInternal) return '#a78bfa';
   return point?.contractStatus ? '#f59e0b' : '#64748b';
 }
 

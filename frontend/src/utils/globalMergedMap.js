@@ -10,6 +10,7 @@ import {
   collectInternationalTrainingConstructionOptions,
   createAllInternationalTrainingConstructionFilters
 } from './internationalTrainingConstructionAggregator';
+import { normalizeInternationalTrainingConstructionRecords } from './internationalTrainingConstructionConfig';
 import {
   buildTrainingDashboard,
   collectTrainingOptions,
@@ -20,6 +21,7 @@ import {
   collectInternationalTrainingDeliveryOptions,
   createAllInternationalTrainingDeliveryFilters
 } from './internationalTrainingDeliveryAggregator';
+import { normalizeInternationalTrainingDeliveryRecords } from './internationalTrainingDeliveryConfig';
 
 export function buildGlobalServiceSnapshot(chinaSource = [], internationalDashboard = null) {
   const china = Array.isArray(chinaSource)
@@ -62,7 +64,9 @@ export function buildGlobalServiceSnapshot(chinaSource = [], internationalDashbo
 
 export function buildGlobalConstructionSnapshot(chinaRecords = [], internationalRecords = []) {
   const chinaDashboard = buildChinaConstructionDashboard(chinaRecords);
-  const internationalDashboard = buildInternationalConstructionDashboard(internationalRecords);
+  // Global snapshots can read datasets saved before parser rules changed.
+  // Normalize first so shared-map counts use the latest contract definitions.
+  const internationalDashboard = buildInternationalConstructionDashboard(normalizeInternationalTrainingConstructionRecords(internationalRecords));
   const mergedCenters = new Map();
 
   chinaDashboard.mapPoints.forEach((point) => mergeConstructionCenter(mergedCenters, {
@@ -90,7 +94,8 @@ export function buildGlobalConstructionSnapshot(chinaRecords = [], international
     productLines: point.productLines || [],
     relationCount: point.relationCount || 0,
     contractStatus: point.contractStatus || 'Status not maintained',
-    isSigned: Boolean(point.isSigned)
+    isSigned: Boolean(point.isSigned),
+    isInternal: Boolean(point.isInternal)
   }));
 
   const points = applyPointOffsets([...mergedCenters.values()].map(finalizeConstructionCenter));
@@ -101,7 +106,8 @@ export function buildGlobalConstructionSnapshot(chinaRecords = [], international
       { label: 'China Centers', value: chinaDashboard.summary.totalCenters || 0, tone: 'cyan' },
       { label: 'International Centers', value: internationalDashboard.summary.totalCenters || 0, tone: 'violet' },
       { label: 'Signed International Centers', value: internationalDashboard.summary.signedCenters || 0, tone: 'green' },
-      { label: 'Unsigned International Centers', value: internationalDashboard.summary.unsignedCenters || 0, tone: 'orange' }
+      { label: 'Unsigned International Centers', value: internationalDashboard.summary.unsignedCenters || 0, tone: 'orange' },
+      { label: 'Internal International Centers', value: internationalDashboard.summary.internalCenters || 0, tone: 'violet' }
     ],
     rankingTitle: 'Center Course Coverage TOP10',
     rankingMetricLabel: 'courses'
@@ -110,7 +116,9 @@ export function buildGlobalConstructionSnapshot(chinaRecords = [], international
 
 export function buildGlobalDeliverySnapshot(chinaRecords = [], internationalRecords = []) {
   const chinaDashboard = buildChinaDeliveryDashboard(chinaRecords);
-  const internationalDashboard = buildInternationalDeliveryDashboard(internationalRecords);
+  // Delivery points now use Training Location as their center identity. Apply
+  // that migration here so saved data is corrected without a fresh import.
+  const internationalDashboard = buildInternationalDeliveryDashboard(normalizeInternationalTrainingDeliveryRecords(internationalRecords));
   const mergedPoints = new Map();
 
   chinaDashboard.mapPoints.forEach((point) => mergeDeliveryPoint(mergedPoints, {
@@ -310,7 +318,8 @@ function mergeConstructionCenter(target, center) {
     productLines: new Set(),
     relationCount: 0,
     contractStatuses: new Set(),
-    isSigned: false
+    isSigned: false,
+    isInternal: false
   };
   current.sources.add(center.source);
   center.courseNames.forEach((value) => value && current.courseNames.add(value));
@@ -318,6 +327,7 @@ function mergeConstructionCenter(target, center) {
   current.relationCount += Number(center.relationCount || 0);
   if (center.contractStatus) current.contractStatuses.add(center.contractStatus);
   current.isSigned = current.isSigned || Boolean(center.isSigned);
+  current.isInternal = current.isInternal || Boolean(center.isInternal);
   target.set(key, current);
 }
 
@@ -329,12 +339,12 @@ function finalizeConstructionCenter(center) {
     source,
     sources,
     value: center.courseNames.size,
-    status: center.isSigned ? 'Signed' : [...center.contractStatuses].join(', '),
+    status: center.isSigned ? 'Signed' : center.isInternal ? 'Internal (Mindray)' : [...center.contractStatuses].join(', '),
     metrics: [
       { label: 'Courses', value: center.courseNames.size },
       { label: 'Product Lines', value: center.productLines.size },
       { label: 'Center-Course Relations', value: center.relationCount },
-      { label: 'Contract Status', value: center.isSigned ? 'Signed' : [...center.contractStatuses].join(', ') || 'Not maintained' }
+      { label: 'Contract Status', value: center.isSigned ? 'Signed' : center.isInternal ? 'Internal (Mindray)' : [...center.contractStatuses].join(', ') || 'Not maintained' }
     ]
   };
 }
@@ -440,7 +450,7 @@ function serviceRisk(stat) {
 }
 
 function emptyConstructionDashboard() {
-  return { summary: { totalCenters: 0, signedCenters: 0, unsignedCenters: 0 }, mapPoints: [] };
+  return { summary: { totalCenters: 0, signedCenters: 0, unsignedCenters: 0, internalCenters: 0 }, mapPoints: [] };
 }
 
 function emptyDeliveryDashboard() {

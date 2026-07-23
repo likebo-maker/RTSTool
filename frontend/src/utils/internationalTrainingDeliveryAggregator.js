@@ -40,6 +40,8 @@ export function applyInternationalTrainingDeliveryFilters(records, filters = DEF
 
 export function buildInternationalTrainingDeliveryDashboard(records, filters = DEFAULT_INTERNATIONAL_TRAINING_DELIVERY_FILTERS) {
   const filteredRecords = applyInternationalTrainingDeliveryFilters(records, filters);
+  // pointKey is the normalized Training Location / center name. It deliberately
+  // does not include the report's Training Organizer, which can vary for one center.
   const pointStats = Object.entries(groupBy(filteredRecords, 'pointKey')).map(([pointKey, pointRecords]) => buildPointStat(pointKey, pointRecords)).filter(Boolean);
   const effectiveRecords = filteredRecords.filter((record) => record.isEffectiveResult);
   const passCount = effectiveRecords.filter((record) => record.isPass).length;
@@ -74,7 +76,7 @@ export function buildInternationalTrainingDeliveryPointDetail(pointKey, records)
     productLineDistribution: aggregateRecords(pointRecords, 'productLine'),
     courseDistribution: aggregateRecords(pointRecords, 'courseName'),
     trendSeries: buildTrendSeries(pointRecords),
-    detailRows: buildDetailRows(pointRecords[0])
+    detailRows: buildDetailRows(pointRecords)
   };
 }
 
@@ -97,6 +99,7 @@ function buildPointStat(pointKey, records) {
     pointKey,
     organizer: first.organizer,
     trainingLocation: first.trainingLocation,
+    sourceOrganizers: uniqueValues(records.map((record) => record.sourceOrganizer)),
     matchedConstructionCenter: first.matchedConstructionCenter || '',
     secondaryRegion: first.secondaryRegion,
     country: first.country,
@@ -120,11 +123,12 @@ function buildPointStat(pointKey, records) {
   };
 }
 
-function buildDetailRows(record) {
+function buildDetailRows(records) {
+  const record = records?.[0];
   if (!record) return [];
   return [
-    ['Training Organizer', record.organizer],
-    ['Training Location', record.trainingLocation],
+    ['Training Center', record.organizer],
+    ['Source Training Organizer', uniqueValues(records.map((item) => item.sourceOrganizer)).join(', ')],
     ['Matched Construction Center', record.matchedConstructionCenter],
     ['Secondary Region', record.secondaryRegion],
     ['Country', record.country],

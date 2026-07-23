@@ -3,13 +3,13 @@
     <section v-if="!fullscreenActive" class="tool-header qualification-tool-header">
       <div class="qualification-tool-heading">
         <div class="tool-icon"><Presentation :size="24" /></div>
-        <div><p class="section-kicker">INTERNATIONAL TRAINING CENTER DELIVERY</p><h1>International Training Center Delivery Map</h1><p>Analyze international delivery by secondary region, country, product line, course, and training organizer.</p></div>
+        <div><p class="section-kicker">INTERNATIONAL TRAINING CENTER DELIVERY</p><h1>International Training Center Delivery Map</h1><p>Analyze international delivery by secondary region, country, product line, course, and training center.</p></div>
       </div>
       <div class="qualification-header-actions">
         <input ref="fileInputRef" class="hidden-file-input" type="file" accept=".xlsx,.xls" multiple @change="handleFileImport" />
         <button v-if="allowImport" class="primary-button" type="button" :disabled="interactionDisabled" @click="openImporter"><Upload :size="18" /><span>Import Excel</span></button>
         <button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)" @click="exportCurrentResult"><LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="18" /><Download v-else :size="18" /><span>Export Current</span></button>
-        <button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled || !dirtyRows.length" @click="exportDirtyRows"><LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="18" /><Download v-else :size="18" /><span>Export Dirty Rows</span></button>
+        <button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled" @click="exportDirtyRows"><LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="18" /><Download v-else :size="18" /><span>Export Dirty Data</span></button>
         <button class="ghost-button" type="button" :disabled="interactionDisabled" @click="resetFilters"><RotateCcw :size="18" /><span>Reset Filters</span></button>
         <button class="ghost-button fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen"><Minimize2 v-if="fullscreenActive" :size="18" /><Maximize2 v-else :size="18" /><span>{{ fullscreenActive ? 'Exit Fullscreen' : 'Browser Fullscreen' }}</span></button>
       </div>
@@ -20,8 +20,11 @@
       <div class="fullscreen-training-actions visible">
         <input ref="fileInputRef" class="hidden-file-input" type="file" accept=".xlsx,.xls" multiple @change="handleFileImport" />
         <button v-if="allowImport" class="primary-button compact" type="button" :disabled="interactionDisabled" @click="openImporter"><Upload :size="16" /><span>Import</span></button>
+        <button class="ghost-button compact" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled || (canExportExcel && !dashboard.filteredRecords.length)" @click="exportCurrentResult"><LoaderCircle v-if="activeExportKey === 'current'" class="spin" :size="16" /><Download v-else :size="16" /><span>Export Current</span></button>
+        <button class="ghost-button compact" :class="{ locked: !canExportExcel }" type="button" :disabled="interactionDisabled" @click="exportDirtyRows"><LoaderCircle v-if="activeExportKey === 'dirty'" class="spin" :size="16" /><Download v-else :size="16" /><span>Export Dirty Data</span></button>
         <button class="ghost-button compact" :class="{ active: fullscreenFiltersOpen }" type="button" @click="fullscreenFiltersOpen = !fullscreenFiltersOpen"><Search :size="16" /><span>Filters</span></button>
-        <button class="ghost-button compact fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen"><Minimize2 :size="16" /><span>Exit</span></button>
+        <button class="ghost-button compact" type="button" :disabled="interactionDisabled" @click="resetFilters"><RotateCcw :size="16" /><span>Reset Filters</span></button>
+        <button class="ghost-button compact fullscreen-toggle-button" type="button" @click="toggleBrowserFullscreen"><Minimize2 :size="16" /><span>Exit Fullscreen</span></button>
       </div>
     </section>
 
@@ -57,7 +60,7 @@
     </section>
 
     <Teleport to="body"><div v-if="pointDetail.pointStat" class="qualification-drawer-backdrop" @click.self="closePointDetail"><aside class="qualification-drawer international-construction-detail-drawer">
-      <div class="qualification-drawer-head"><div><p class="section-kicker">DELIVERY DETAIL</p><h2>{{ pointDetail.pointStat.organizer }}</h2><span>{{ pointDetail.pointStat.trainingLocation }} / {{ pointDetail.pointStat.country }}</span></div><div class="qualification-drawer-actions"><button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="!canExportExcel || Boolean(activeExportKey)" @click="exportPointDetail"><LoaderCircle v-if="activeExportKey === 'point'" class="spin" :size="17" /><Download v-else :size="17" /><span>Export Detail</span></button><button class="icon-button" type="button" @click="closePointDetail"><X :size="18" /></button></div></div>
+      <div class="qualification-drawer-head"><div><p class="section-kicker">DELIVERY DETAIL</p><h2>{{ pointDetail.pointStat.organizer }}</h2><span>{{ pointDetail.pointStat.displayLocation }} / {{ pointDetail.pointStat.country }}</span></div><div class="qualification-drawer-actions"><button class="ghost-button" :class="{ locked: !canExportExcel }" type="button" :disabled="!canExportExcel || Boolean(activeExportKey)" @click="exportPointDetail"><LoaderCircle v-if="activeExportKey === 'point'" class="spin" :size="17" /><Download v-else :size="17" /><span>Export Detail</span></button><button class="icon-button" type="button" @click="closePointDetail"><X :size="18" /></button></div></div>
       <div class="qualification-drawer-metrics"><article v-for="metric in pointMetricCards" :key="metric.key" class="metric-card" :class="metric.tone"><component :is="metric.icon" :size="18" /><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></article></div>
       <section class="international-center-info-grid"><div v-for="item in pointDetail.detailRows" :key="item.label" class="international-center-info-row"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></section>
       <div class="qualification-drawer-chart-grid international-delivery-detail-charts"><EChartPanel title="Product Line Distribution" kicker="DELIVERY PRODUCT LINE" :option="pointProductBarOption" :active="active" height="260px" empty-text="No product line data." /><EChartPanel title="Course Distribution" kicker="DELIVERY COURSE" :option="pointCourseBarOption" :active="active" height="260px" empty-text="No course data." /><EChartPanel title="Training Cycle Trend" kicker="TRAINING TREND" :option="pointTrendOption" :active="active" height="260px" empty-text="No training trend data." /></div>
@@ -80,6 +83,7 @@ import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../service
 import { DEFAULT_INTERNATIONAL_TRAINING_DELIVERY_FILTERS, buildInternationalTrainingDeliveryDashboard, buildInternationalTrainingDeliveryDynamicOptions, buildInternationalTrainingDeliveryPointDetail, cloneInternationalTrainingDeliveryFilters, collectInternationalTrainingDeliveryOptions, createAllInternationalTrainingDeliveryFilters } from '../utils/internationalTrainingDeliveryAggregator';
 import { exportInternationalTrainingDeliveryDirtyRows, exportInternationalTrainingDeliveryPointRecords, exportInternationalTrainingDeliveryRecords } from '../utils/exportInternationalTrainingDelivery';
 import { parseInternationalTrainingDeliveryFiles } from '../utils/internationalTrainingDeliveryParser';
+import { normalizeInternationalTrainingDeliveryRecords } from '../utils/internationalTrainingDeliveryConfig';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
 const props = defineProps({ canExportExcel: { type: Boolean, default: true }, fullscreenActive: { type: Boolean, default: false }, active: { type: Boolean, default: true }, allowImport: { type: Boolean, default: true } });
@@ -173,7 +177,7 @@ async function handleFileImport(event) {
     importOverlay.mode = 'success';
     importOverlay.progress = 100;
     importOverlay.message = `Imported ${records.value.length.toLocaleString('en-US')} training records.`;
-    warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded. Export Dirty Rows to review the original data and reason.` : importWarnings.value[0] || '';
+    warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded. Export Dirty Data to review the original data and reason.` : importWarnings.value[0] || '';
     emit('log', `International training delivery import completed: ${records.value.length} records.`);
     closeTimer = setTimeout(closeImportOverlay, 800);
   } catch (error) {
@@ -232,7 +236,12 @@ async function exportPointDetail() {
 }
 
 async function exportDirtyRows() {
-  if (!guardExportPermission() || !dirtyRows.value.length) return;
+  if (!guardExportPermission()) return;
+  if (!dirtyRows.value.length) {
+    warningMessage.value = 'There is no dirty data to export from the latest import.';
+    emit('log', 'No international training delivery dirty rows are available for export.');
+    return;
+  }
   activeExportKey.value = 'dirty';
   try { await runWithMinimumVisibleTime(() => exportInternationalTrainingDeliveryDirtyRows(dirtyRows.value)); emit('log', `Exported ${dirtyRows.value.length} international delivery dirty rows.`); } finally { activeExportKey.value = ''; }
 }
@@ -249,7 +258,9 @@ async function loadLastDataset() {
   try {
     const saved = await loadToolDataset(LOCAL_DATASET_KEYS.INTERNATIONAL_TRAINING_DELIVERY_MAP);
     if (!saved?.payload?.records?.length) return;
-    records.value = saved.payload.records;
+    // Rehydrate saved data through the latest center-name rule. This keeps old
+    // imports grouped by Training Location without making users import again.
+    records.value = normalizeInternationalTrainingDeliveryRecords(saved.payload.records);
     dirtyRows.value = saved.payload.dirtyRows || [];
     importWarnings.value = saved.payload.warnings || [];
     resetFiltersToAll();

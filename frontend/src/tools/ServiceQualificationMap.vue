@@ -1,5 +1,11 @@
 <template>
-  <div class="tool-page qualification-page engineer-qualification-map-page" :class="{ 'fullscreen-workspace': fullscreenActive }">
+  <div
+    class="tool-page qualification-page engineer-qualification-map-page"
+    :class="{
+      'fullscreen-workspace': fullscreenActive,
+      'global-merged-fullscreen-workspace': fullscreenActive && activeTab === 'global'
+    }"
+  >
     <section v-if="!fullscreenActive" class="glass-panel training-center-tab-panel">
       <div>
         <p class="section-kicker">Engineer Qualification Map</p>
@@ -30,7 +36,7 @@
     />
 
     <SharedDataImportHub
-      v-show="activeTab === 'global'"
+      v-show="activeTab === 'global' && !fullscreenActive"
       compact
       kicker="GLOBAL SERVICE QUALIFICATION MAP"
       title="Global Service Qualification Data"
@@ -47,12 +53,15 @@
       title="Global Service Qualification Map"
       description="China branch locations and International country-capital locations are displayed together on one offline world map."
       :active="active && activeTab === 'global'"
+      :fullscreen-active="fullscreenActive && activeTab === 'global'"
       :loading="globalMapLoading"
       :points="globalSnapshot.points"
       :metrics="globalSnapshot.metrics"
       :ranking-title="globalSnapshot.rankingTitle"
       :ranking-metric-label="globalSnapshot.rankingMetricLabel"
       empty-text="Import China or International service qualification data to display the global map."
+      @enter-fullscreen="$emit('enter-fullscreen')"
+      @exit-fullscreen="$emit('exit-fullscreen')"
     />
 
     <ChinaServiceQualificationMap
@@ -133,6 +142,7 @@ const internationalDataset = ref(createDatasetState());
 const serviceDataSources = computed(() => [
   {
     key: 'china',
+    shortLabel: 'China',
     label: 'China Service Qualification Data',
     description: 'Shared by the China Service Qualification Map.',
     recordLabel: 'qualification rows',
@@ -140,6 +150,7 @@ const serviceDataSources = computed(() => [
   },
   {
     key: 'international',
+    shortLabel: 'International',
     label: 'International Service Qualification Data',
     description: 'Shared by the International Service Qualification Map.',
     recordLabel: 'qualification rows',

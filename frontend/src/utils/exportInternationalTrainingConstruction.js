@@ -9,6 +9,20 @@ export function exportInternationalTrainingConstructionCenterRecords(centerName,
   exportInternationalTrainingConstructionRecords(records, `${safeName}_construction_details.xlsx`);
 }
 
+export function exportInternationalTrainingConstructionDirtyRows(dirtyRows, fileName = 'international_training_center_construction_dirty_rows.xlsx') {
+  const rows = (dirtyRows || []).map((row) => ({
+    Category: row.category || '',
+    Reason: row.reason || '',
+    'Source File': row.sourceFile || '',
+    'Source Sheet': row.sourceSheet || '',
+    'Source Row': row.sourceRow || '',
+    ...Object.fromEntries(
+      Object.entries(row.rawData || {}).map(([key, value]) => [`Original - ${key}`, value])
+    )
+  }));
+  writeWorkbook(rows, 'Dirty Rows', fileName);
+}
+
 function toExportRow(record) {
   return {
     'Center Name': record.centerName || '',
