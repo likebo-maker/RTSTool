@@ -8,6 +8,7 @@ import sys
 import json
 import threading
 import webbrowser
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -211,6 +212,13 @@ MSP_PROBLEM_TYPE = "临床服务"
 
 ASSESSMENT_ONLINE_CHANNELS = {"热线申告", "微信视频申告", "一键报修申告", "微信申告", "远程申告"}
 ASSESSMENT_PROVIDERS = ["迪诺", "科海", "庆余堂", "尚肯"]
+ASSESSMENT_RESULT_PROVIDER_GROUPS = [
+    ("迪诺", ("迪诺",)),
+    ("科海", ("科海",)),
+    ("IVD合计", ("迪诺", "科海")),
+    ("庆余堂", ("庆余堂",)),
+    ("尚肯", ("尚肯",)),
+]
 ASSESSMENT_PROVIDER_ALIASES = {
     "迪诺": ["迪诺", "四川迪诺", "陈银亭", "吴昌翼", "赵平", "马上", "杨洪"],
     "科海": ["科海", "河北科海", "温彦朝", "李勇健", "杨计正", "杨计正", "佟健阳", "佟建阳", "秦敬国"],
@@ -232,6 +240,10 @@ ASSESSMENT_STAFF_PROVIDER_MAP = {
     "s100004229": "尚肯",
     "s100005735": "庆余堂",
     "s100003537": "庆余堂",
+}
+ASSESSMENT_TRANSFER_PROVIDER_MAP = {
+    "转接-ivd服务1组-迪诺": "迪诺",
+    "转接-ivd服务2组-科海": "科海",
 }
 
 
@@ -2459,6 +2471,17 @@ def _assessment_provider_from_staff(value: Any) -> str:
     )
 
 
+def _assessment_is_numeric_customer(value: Any) -> bool:
+    text = _normalize_cell_text(value)
+    return bool(text and re.fullmatch(r"[0-9]+(?:\.0+)?", text))
+
+
+def _assessment_provider_from_mcc_ticket(customer: Any, transfer_result: Any) -> str:
+    if not _assessment_is_numeric_customer(customer):
+        return _assessment_provider_from_text(customer)
+    return ASSESSMENT_TRANSFER_PROVIDER_MAP.get(_normalize_cell_text(transfer_result), "")
+
+
 def _duration_to_seconds(value: Any) -> float | None:
     if value is None or pd.isna(value):
         return None
@@ -2466,6 +2489,8 @@ def _duration_to_seconds(value: Any) -> float | None:
         if pd.isna(value):
             return None
         return float(value)
+    if isinstance(value, (timedelta, pd.Timedelta, np.timedelta64)):
+        return float(pd.Timedelta(value).total_seconds())
     if hasattr(value, "hour") and hasattr(value, "minute") and hasattr(value, "second"):
         return float(value.hour * 3600 + value.minute * 60 + value.second)
 
@@ -2617,7 +2642,10 @@ def _build_assessment_provider_result(
     video_service["__provider"] = video_service["客服工号"].map(_assessment_provider_from_staff)
 
     mcc_ticket = mcc_ticket_df.copy()
-    mcc_ticket["__provider"] = mcc_ticket["受理客服"].map(_assessment_provider_from_text)
+    mcc_ticket["__provider"] = mcc_ticket.apply(
+        lambda row: _assessment_provider_from_mcc_ticket(row["受理客服"], row["TS转接结果"]),
+        axis=1,
+    )
 
     crm_video = crm_video_df.copy()
     crm_video["__provider"] = crm_video.apply(
@@ -2635,18 +2663,19 @@ def _build_assessment_provider_result(
     quality_deduction_col = _find_required_column_by_prefix(quality, "扣分", "每日质检记录表")
 
     rows = []
-    for provider in ASSESSMENT_PROVIDERS:
-        provider_calls = mcc_call[mcc_call["__provider"] == provider]
+    for provider, included_providers in ASSESSMENT_RESULT_PROVIDER_GROUPS:
+        provider_calls = mcc_call[mcc_call["__provider"].isin(included_providers)]
         hotline_ring_seconds = pd.to_numeric(provider_calls["响铃时间"].map(_duration_to_seconds), errors="coerce")
-        hotline_answer_denominator = int(len(provider_calls))
-        hotline_answer_numerator = int((hotline_ring_seconds <= 15).sum())
+        zero_ring_mask = hotline_ring_seconds.eq(0)
+        hotline_answer_denominator = int((~zero_ring_mask).sum())
+        hotline_answer_numerator = int(((hotline_ring_seconds > 0) & (hotline_ring_seconds <= 15)).sum())
 
-        provider_video_service = video_service[video_service["__provider"] == provider]
+        provider_video_service = video_service[video_service["__provider"].isin(included_providers)]
         video_answer_numerator, video_answer_denominator, video_answer_rate = _calculate_video_answer_rate(
             provider_video_service
         )
 
-        provider_mcc_tickets = mcc_ticket[mcc_ticket["__provider"] == provider]
+        provider_mcc_tickets = mcc_ticket[mcc_ticket["__provider"].isin(included_providers)]
         hotline_duration_total = 0.0
         for _, row in provider_mcc_tickets.iterrows():
             duration = _datetime_diff_seconds(row["关闭时间"], row["创建时间"])
@@ -2656,16 +2685,18 @@ def _build_assessment_provider_result(
         video_duration_total = float(
             provider_video_service["通话时间"].map(_duration_to_seconds).fillna(0).sum()
         )
-        processing_denominator = int(len(provider_mcc_tickets) + len(provider_video_service))
+        hotline_processing_count = int(len(provider_mcc_tickets))
+        video_processing_count = int(len(provider_video_service))
+        processing_total_count = hotline_processing_count + video_processing_count
         average_processing_seconds = _safe_divide(
             hotline_duration_total + video_duration_total,
-            processing_denominator,
+            processing_total_count,
         )
 
         hotline_satisfaction_count, hotline_satisfaction = _calculate_hotline_satisfaction(provider_mcc_tickets)
         video_satisfaction_count, video_satisfaction = _calculate_video_satisfaction(provider_video_service)
 
-        provider_quality = quality[quality["__provider"] == provider]
+        provider_quality = quality[quality["__provider"].isin(included_providers)]
         quality_total = int(len(provider_quality))
         quality_failed = int(provider_quality[quality_deduction_col].map(_normalize_cell_text).ne("").sum())
         quality_passed = quality_total - quality_failed
@@ -2674,7 +2705,7 @@ def _build_assessment_provider_result(
         hotline_solved = int((mcc_status == "技术支持解决").sum())
         hotline_solution_denominator = int(mcc_status.isin({"技术支持解决", "派工完成"}).sum())
 
-        provider_crm_video = crm_video[crm_video["__provider"] == provider]
+        provider_crm_video = crm_video[crm_video["__provider"].isin(included_providers)]
         video_status = provider_crm_video["用户状态"].map(_normalize_cell_text)
         video_solved = int((video_status == "技术支持解决").sum())
         video_solution_denominator = int(video_status.isin({"技术支持解决", "转FSM平台派工"}).sum())
@@ -2692,7 +2723,9 @@ def _build_assessment_provider_result(
             "视频15秒分子": video_answer_numerator,
             "视频15秒分母": video_answer_denominator,
             "平均在线工单处理时长": _format_duration_hours(average_processing_seconds),
-            "在线处理工单数": processing_denominator,
+            "在线处理总工单数": processing_total_count,
+            "在线处理热线工单数": hotline_processing_count,
+            "在线处理视频工单数": video_processing_count,
             "热线满意度": hotline_satisfaction,
             "热线满意度样本数": hotline_satisfaction_count,
             "视频满意度": video_satisfaction,
@@ -2756,14 +2789,17 @@ def _write_assessment_logic_sheet(writer: pd.ExcelWriter) -> None:
     rows = [
         [1, "分公司工单取消率", "按分公司统计 MSP 工单总数和工单状态为“已取消”的数量，取消数量/工单总数。", "MSP工单总表"],
         [2, "在线服务工单预约及时率", "筛选热线申告、微信视频申告、一键报修申告、微信申告、远程申告且未取消的 MSP 工单；预约完成时间-首次派单时间≤30分钟为及时。", "MSP工单总表"],
-        [3, "在线工单15秒接起率", "热线按相关客服匹配分包商并统计响铃时间≤15秒；视频按客服工号匹配分包商，按接通/未接通及失败原因组成分母并统计15秒内接通。", "MCC通话记录；视频服务记录"],
-        [4, "平均在线工单处理时长", "热线取关闭时间-创建时间，视频取通话时间；按分包商汇总总时长后除以热线+视频工单数量。", "MCC热线工单；视频服务记录"],
-        [5, "在线工单满意度", "热线按短信满意度结果1/2/3折算100/80/60分；视频按评价1-5分折算为满分5分占比。", "MCC热线工单；视频服务记录"],
-        [6, "质检合格率", "按分包商统计质检记录；扣分字段为空为合格，合格数/质检总数。", "每日质检记录表"],
-        [7, "平均修复时长（线上）", "筛选在线服务渠道 MSP 工单，服务结束时间-首次派单时间的总时长除以工单数量。", "MSP工单总表"],
-        [8, "热线解决率", "按分包商筛选 MCC 热线工单，技术支持解决数量/（技术支持解决+派工完成）。", "MCC热线工单"],
-        [9, "视频解决率", "按负责GTS编号匹配分包商，技术支持解决数量/（技术支持解决+转FSM平台派工）。", "CRM视频工单"],
-        [10, "视频占线率", "按客服工号匹配分包商，排队时长>3秒的视频记录数/该分包商视频记录总数。", "视频服务记录"],
+        [3, "在线工单15秒接起率", "热线先剔除响铃时间明确换算为0秒的记录，再以响铃时间>0且≤15秒的记录数/剩余全部记录数计算；空白或无法识别的响铃时间只计入分母。视频继续按客服工号匹配分包商，并按A+B+C+D口径计算。", "MCC通话记录；视频服务记录"],
+        [4, "平均在线工单处理时长", "热线取关闭时间-创建时间，视频取通话时间；按分包商汇总有效总时长后除以在线处理总工单数。IVD合计使用迪诺、科海合并后的总时长和总工单数重新计算。", "MCC热线工单；视频服务记录"],
+        [5, "在线处理工单数", "在线处理热线工单数为最终归属该分包商的全部MCC热线工单记录数；在线处理视频工单数为按客服工号归属的全部视频服务记录数，均不筛选状态且不去重；在线处理总工单数=热线工单数+视频工单数。", "MCC热线工单；视频服务记录"],
+        [6, "在线工单满意度", "热线按短信满意度结果1/2/3折算100/80/60分；视频按评价1-5分折算为满分5分占比。", "MCC热线工单；视频服务记录"],
+        [7, "质检合格率", "按分包商统计质检记录；扣分字段为空为合格，合格数/质检总数。", "每日质检记录表"],
+        [8, "平均修复时长（线上）", "筛选在线服务渠道 MSP 工单，服务结束时间-首次派单时间的总时长除以工单数量。", "MSP工单总表"],
+        [9, "热线解决率", "按分包商筛选 MCC 热线工单，技术支持解决数量/（技术支持解决+派工完成）。", "MCC热线工单"],
+        [10, "视频解决率", "按负责GTS编号匹配分包商，技术支持解决数量/（技术支持解决+转FSM平台派工）。", "CRM视频工单"],
+        [11, "视频占线率", "按客服工号匹配分包商，排队时长>3秒的视频记录数/该分包商视频记录总数。", "视频服务记录"],
+        [12, "MCC热线工单分包商归属", "非数字受理客服继续按现有分包商名称、姓名和别名匹配；数字、纯数字文本或数字加.0形式的受理客服读取TS转接结果，仅“转接-ivd服务1组-迪诺”归属迪诺，“转接-ivd服务2组-科海”归属科海，其他结果不纳入。", "MCC热线工单"],
+        [13, "IVD合计", "仅合并迪诺和科海。数量、分子、分母和有效总时长先合并，所有比例和平均值均基于合并后的基础数据重新计算，不对两个分包商的百分比或平均时长做算术平均。", "分包商指标相关源表"],
     ]
     logic_df = pd.DataFrame(rows, columns=["序号", "指标", "计算逻辑", "表格来源"])
     logic_df.to_excel(writer, index=False, sheet_name="计算逻辑")
@@ -2812,7 +2848,7 @@ def process_online_assessment_excels(
     _ensure_columns(msp_df, ["工单状态", "分公司", "申告渠道", "首次派单时间", "预约完成时间", "服务结束时间"], "MSP工单总表")
     _ensure_columns(mcc_call_df, ["相关客服", "响铃时间"], "MCC通话记录")
     _ensure_columns(video_service_df, ["客服工号", "振铃时长", "是否接通", "失败原因", "通话时间", "评价", "排队时长"], "视频服务记录")
-    _ensure_columns(mcc_ticket_df, ["受理客服", "创建时间", "关闭时间", "短信满意度结果", "受理单(service call)状态"], "MCC热线工单")
+    _ensure_columns(mcc_ticket_df, ["受理客服", "TS转接结果", "创建时间", "关闭时间", "短信满意度结果", "受理单(service call)状态"], "MCC热线工单")
     _ensure_columns(crm_video_df, ["负责GTS编号", "负责GTS", "用户状态"], "CRM视频工单")
     _ensure_columns(quality_df, ["代理商"], "每日质检记录表")
     _find_required_column_by_prefix(quality_df, "扣分", "每日质检记录表")
