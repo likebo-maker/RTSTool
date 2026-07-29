@@ -7,6 +7,7 @@ import {
   resolveInternationalTrainingDeliveryProductLine,
   resolveInternationalTrainingDeliveryRegion
 } from './internationalTrainingDeliveryConfig';
+import { normalizeTrainingSettlementDate } from './trainingSettlementDate';
 
 const REQUIRED_FIELDS = ['batchId', 'courseName', 'rawProductLine', 'secondaryRegion', 'trainingLocation', 'completion'];
 const FIELD_ALIASES = {
@@ -30,6 +31,7 @@ const FIELD_ALIASES = {
   trainingMonth: ['培训月份'],
   startDate: ['培训开始日期'],
   endDate: ['培训结束日期'],
+  settlementDate: ['培训结算时间'],
   startTime: ['培训开始时间'],
   endTime: ['培训结束时间'],
   durationHours: ['课时'],
@@ -110,6 +112,20 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
           continue;
         }
 
+        const settlementDate = normalizeTrainingSettlementDate(values.settlementDate);
+        // A missing settlement date is a data-quality issue, but it does not
+        // discard a delivery record that is otherwise valid. Date-filtered
+        // results exclude it until the source workbook is corrected.
+        if (!settlementDate) {
+          dirtyRows.push(createDirtyRow(
+            dirtyContext,
+            values.settlementDate
+              ? `Settlement Date could not be recognized: ${values.settlementDate}.`
+              : 'Settlement Date is missing.',
+            'International training delivery retained date issue'
+          ));
+        }
+
         const secondaryRegion = resolveInternationalTrainingDeliveryRegion(values.secondaryRegion);
         if (!secondaryRegion) {
           dirtyRows.push(createDirtyRow(dirtyContext, `Secondary region was not recognized: ${values.secondaryRegion}.`));
@@ -164,6 +180,7 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
           trainingCycle,
           startDate: values.startDate,
           endDate: values.endDate,
+          settlementDate,
           durationHours: values.durationHours,
           sourceCountry: values.sourceCountry,
           sourceCenter: values.sourceCenter,
@@ -178,8 +195,7 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
           remark: values.remark,
           sourceFile: file.name,
           sourceSheet: sheetName,
-          sourceRow: rowIndex + 1,
-          rawData
+          sourceRow: rowIndex + 1
         }));
       }
     }
@@ -229,8 +245,8 @@ function resolveTrainingCycle(values) {
   return year && month ? `${year}-${String(Number(month)).padStart(2, '0')}` : 'Unscheduled';
 }
 
-function createDirtyRow(context, reason) {
-  return { category: 'International training delivery excluded row', reason, ...context };
+function createDirtyRow(context, reason, category = 'International training delivery excluded row') {
+  return { category, reason, ...context };
 }
 
 function normalizeHeader(value) {

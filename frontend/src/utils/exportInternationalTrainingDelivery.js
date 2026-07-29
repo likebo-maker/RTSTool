@@ -41,6 +41,7 @@ function toExportRow(record) {
     Completion: record.completion || '',
     'Start Date': record.startDate || '',
     'End Date': record.endDate || '',
+    'Settlement Date': record.settlementDate || '',
     'Duration Hours': record.durationHours || '',
     Lecturer: record.lecturer || '',
     Remark: record.remark || '',

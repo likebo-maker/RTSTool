@@ -21,7 +21,11 @@
       </div>
       <div class="training-region-legend international-region-legend">
         <span class="qualification-map-legend-title">Secondary Region</span>
-        <div v-for="item in regionLegendItems" :key="item.name" class="training-region-legend-row" :class="{ muted: item.count === 0 }"><span class="training-region-legend-dot" :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"></span><span class="training-region-legend-name">{{ item.name }}</span><strong>{{ item.count }}</strong></div>
+        <div v-for="item in regionLegendItems" :key="item.name" class="training-region-legend-row international-delivery-region-row" :class="{ muted: item.attendanceCount === 0 }">
+          <span class="training-region-legend-dot" :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"></span>
+          <span class="training-region-legend-name">{{ item.name }}</span>
+          <strong>{{ formatNumber(item.sessionCount) }} sessions · {{ formatNumber(item.attendanceCount) }} attendance</strong>
+        </div>
       </div>
       <div v-if="loading" class="qualification-map-overlay"><LoaderCircle class="spin" :size="24" /><span>Loading delivery map...</span></div>
       <div v-else-if="errorMessage" class="qualification-map-overlay error"><MapPinned :size="24" /><span>{{ errorMessage }}</span></div>
@@ -35,11 +39,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts';
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
 import worldCountriesGeo from '../data/worldCountriesGeo.json';
-import { MAP_POINT_SYMBOL_SIZE } from '../utils/offlineChinaMap';
 import { getInternationalTrainingDeliveryRegionGroups } from '../utils/internationalTrainingDeliveryConfig';
+import { createInternationalQualificationPointSizer } from '../utils/internationalQualificationMapSizing';
 
 const props = defineProps({
   points: { type: Array, default: () => [] },
+  regionStats: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   active: { type: Boolean, default: true },
   fullscreenActive: { type: Boolean, default: false },
@@ -64,6 +69,10 @@ const displayModes = [
   { key: 'session-count', label: 'Sessions' }
 ];
 const regionGroups = computed(() => getInternationalTrainingDeliveryRegionGroups());
+// CHINA is retained as an international delivery data scope because those
+// centers must remain visible, but it is not one of the seven secondary
+// regions required by the business legend.
+const legendRegionGroups = computed(() => regionGroups.value.filter((region) => region.name !== 'CHINA'));
 const worldCountryNames = computed(() => (worldCountriesGeo.features || []).map((feature) => feature?.properties?.name).filter(Boolean));
 const regionColorMap = computed(() => new Map(regionGroups.value.map((region) => [region.name, region.color])));
 const countryRegionMap = computed(() => {
@@ -77,9 +86,13 @@ const legendConfig = computed(() => {
   return { title: 'Training Records', items: [{ label: '120 or more', color: '#22c55e' }, { label: '60 to 119', color: '#f59e0b' }, { label: 'Below 60', color: '#38bdf8' }] };
 });
 const regionLegendItems = computed(() => {
-  const counts = new Map(regionGroups.value.map((region) => [region.name, 0]));
-  props.points.forEach((point) => counts.set(point.secondaryRegion, (counts.get(point.secondaryRegion) || 0) + 1));
-  return regionGroups.value.map((region) => ({ name: region.name, color: region.color, count: counts.get(region.name) || 0 }));
+  const stats = new Map((props.regionStats || []).map((item) => [item.name, item]));
+  return legendRegionGroups.value.map((region) => ({
+    name: region.name,
+    color: region.color,
+    sessionCount: Number(stats.get(region.name)?.sessionCount || 0),
+    attendanceCount: Number(stats.get(region.name)?.attendanceCount || 0)
+  }));
 });
 
 onMounted(async () => { window.addEventListener('resize', handleResize); await nextTick(); initChart(); });
@@ -118,6 +131,11 @@ function buildMapOption() {
     ...point,
     itemStyle: { color: getPointColor(point), borderColor: '#e0f2fe', borderWidth: 1.2, shadowBlur: 14, shadowColor: getPointColor(point) }
   }));
+  const pointSizer = createInternationalQualificationPointSizer(scatterData, {
+    valueField: 'recordCount',
+    minimumSize: 12,
+    maximumSize: 34
+  });
   return {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'item', borderWidth: 0, backgroundColor: 'rgba(8, 13, 30, 0.94)', textStyle: { color: '#e2e8f0' }, formatter: (params) => buildTooltip(params?.data) },
@@ -129,7 +147,7 @@ function buildMapOption() {
     },
     series: [{
       name: 'Training Delivery', type: 'effectScatter', coordinateSystem: 'geo', zlevel: 4, data: scatterData, symbol: 'circle',
-      symbolSize: (value, params) => params.data?.pointKey === props.selectedPoint ? MAP_POINT_SYMBOL_SIZE.selected : MAP_POINT_SYMBOL_SIZE.normal,
+      symbolSize: (value, params) => pointSizer(params.data, { selected: params.data?.pointKey === props.selectedPoint }),
       rippleEffect: { brushType: 'stroke', scale: 3.4, period: 4 },
       itemStyle: { color: (params) => getPointColor(params.data), borderColor: 'rgba(255,255,255,0.82)', borderWidth: 1.2, shadowBlur: 14, shadowColor: (params) => getPointColor(params.data) },
       label: { show: false }, emphasis: { scale: true, label: { show: false } }
@@ -194,6 +212,7 @@ function applyFocus() {
 }
 
 function escapeHtml(value) { return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }
+function formatNumber(value) { return Number(value || 0).toLocaleString('en-US'); }
 function handleResize() { chartInstance?.resize(); }
 function disposeChart() { if (!chartInstance) return; chartInstance.off('click', handleChartClick); chartInstance.dispose(); chartInstance = null; }
 </script>

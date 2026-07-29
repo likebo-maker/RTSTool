@@ -9,6 +9,10 @@ import {
   splitCertifiedProductLines
 } from './internationalTrainingConstructionConfig';
 import { hasWorldCountryGeometry, resolveCountrySecondaryRegion } from './globalRegionMap';
+import {
+  buildInvalidProductLineReason,
+  isValidInternationalTrainingConstructionProductLine
+} from './internationalTrainingConstructionDataQuality';
 
 const REQUIRED_FIELDS = ['centerName', 'region', 'country'];
 const FIELD_ALIASES = {
@@ -88,16 +92,28 @@ export async function parseInternationalTrainingConstructionFiles(fileList, opti
       const secondaryRegion = resolveInternationalTrainingRegion(values.region);
       const country = resolveInternationalTrainingCountry(values.country);
       if (!secondaryRegion) {
-        dirtyRows.push(createDirtyRow(dirtyContext, `Secondary region was not recognized: ${values.region}`));
+        const countryInRegionField = resolveInternationalTrainingCountry(values.region);
+        const reason = countryInRegionField
+          ? `Secondary Region contains a Country value: ${values.region}`
+          : `Secondary region was not recognized: ${values.region}`;
+        dirtyRows.push(createDirtyRow(dirtyContext, reason, ['Secondary Region']));
         continue;
       }
       if (!country || !hasWorldCountryGeometry(country)) {
-        dirtyRows.push(createDirtyRow(dirtyContext, `Country was not recognized in the offline world map: ${values.country}`));
+        const regionInCountryField = resolveInternationalTrainingRegion(values.country);
+        const reason = regionInCountryField
+          ? `Country contains a Secondary Region value: ${values.country}`
+          : `Country was not recognized in the offline world map: ${values.country}`;
+        dirtyRows.push(createDirtyRow(dirtyContext, reason, ['Country']));
         continue;
       }
       const expectedRegion = resolveCountrySecondaryRegion(country);
-      if (secondaryRegion !== 'CHINA' && expectedRegion && expectedRegion !== secondaryRegion) {
-        dirtyRows.push(createDirtyRow(dirtyContext, `Country-region mismatch: ${country} belongs to ${expectedRegion}, not ${secondaryRegion}.`));
+      if (!isCountryRegionMatch(country, secondaryRegion, expectedRegion)) {
+        dirtyRows.push(createDirtyRow(
+          dirtyContext,
+          `Country-region mismatch: ${country} belongs to ${expectedRegion}, not ${secondaryRegion}.`,
+          ['Secondary Region', 'Country']
+        ));
         continue;
       }
 
@@ -147,7 +163,24 @@ export async function parseInternationalTrainingConstructionFiles(fileList, opti
       };
       const products = splitCertifiedProductLines(values.productLines);
       const courses = splitCertifiedCourses(values.courses);
-      products.forEach((productLine) => {
+      const validProducts = products.filter(isValidInternationalTrainingConstructionProductLine);
+      const invalidProducts = products.filter((productLine) => !isValidInternationalTrainingConstructionProductLine(productLine));
+      if (invalidProducts.length) {
+        const invalidReason = values.productLines
+          ? invalidProducts.map(buildInvalidProductLineReason).join('; ')
+          : buildInvalidProductLineReason('');
+        dirtyRows.push(createDirtyRow(
+          dirtyContext,
+          invalidReason,
+          ['Product Line'],
+          'retained'
+        ));
+      }
+
+      // A row with only invalid product-line values still contributes one
+      // center/map point. The invalid dimension is excluded by the aggregator.
+      const productsForRecords = validProducts.length ? validProducts : [invalidProducts[0]];
+      productsForRecords.forEach((productLine) => {
         courses.forEach((courseName) => {
           records.push(normalizeInternationalTrainingConstructionRecord({ ...centerBase, productLine, courseName }));
         });
@@ -195,8 +228,22 @@ function readValues(row, columnIndexes) {
   );
 }
 
-function createDirtyRow(context, reason) {
-  return { category: 'International training center excluded row', reason, ...context };
+function createDirtyRow(context, reason, affectedFields = [], handling = 'excluded') {
+  const retained = handling === 'retained';
+  return {
+    category: retained ? 'International training center retained row' : 'International training center excluded row',
+    handling: retained
+      ? 'Retained; invalid filter dimensions are hidden from filters and distributions.'
+      : 'Excluded from all calculations and map rendering.',
+    affectedFields,
+    reason,
+    ...context
+  };
+}
+
+function isCountryRegionMatch(country, secondaryRegion, expectedRegion) {
+  if (country === 'China') return secondaryRegion === 'CHINA' || secondaryRegion === 'APAC';
+  return !expectedRegion || expectedRegion === secondaryRegion;
 }
 
 function normalizeHeader(value) {

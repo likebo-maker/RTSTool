@@ -6,6 +6,7 @@ import {
   normalizeCenterName,
   normalizeCourseName
 } from './trainingConstructionConfig';
+import { normalizeTrainingSettlementDate } from './trainingSettlementDate';
 
 const HEADER_ALIASES = {
   branch: ['区域', '分公司', '所属分公司', '服务区域'],
@@ -26,6 +27,7 @@ const HEADER_ALIASES = {
   durationHours: ['课时'],
   startDate: ['培训开始时间', '培训开始日期'],
   endDate: ['培训结束时间', '培训结束日期'],
+  settlementDate: ['培训结算时间'],
   batchId: ['班次ID'],
   organizer: ['培训组织方'],
   trainingPlace: ['培训地点']
@@ -187,7 +189,30 @@ export async function parseTrainingFiles(fileList, options = {}) {
         const batchId = pickFirstMeaningfulValue(row, columnIndexMap, ['batchId']);
         const startDate = pickFirstMeaningfulValue(row, columnIndexMap, ['startDate']);
         const endDate = pickFirstMeaningfulValue(row, columnIndexMap, ['endDate']);
+        const settlementDateSource = columnIndexMap.settlementDate === undefined
+          ? ''
+          : row[columnIndexMap.settlementDate];
+        const settlementDate = normalizeTrainingSettlementDate(settlementDateSource);
         const durationHours = pickFirstMeaningfulValue(row, columnIndexMap, ['durationHours']);
+
+        // Settlement date is the governed date dimension. Keep the otherwise
+        // valid delivery record, but export its full source row for correction.
+        if (!settlementDate) {
+          validation.invalidSettlementDates += 1;
+          pushDeliveryDirtyRow(validation, {
+            category: '培训结算时间异常',
+            reason: settlementDateSource ? `培训结算时间无法识别：${settlementDateSource}` : '培训结算时间为空',
+            sourceFile: file.name,
+            sourceSheet: sheetName,
+            sourceRow: rowIndex + 1,
+            organizer,
+            trainingPlace,
+            trainingCenter: centerMatch.center.centerName,
+            courseName: courseMatch.courseName,
+            productLine: courseMatch.productLine,
+            rawData: buildRawRowObject(headerRow, row)
+          });
+        }
 
         if (!organizer && !courseName && !cycle && !trainingType) continue;
 
@@ -230,6 +255,7 @@ export async function parseTrainingFiles(fileList, options = {}) {
           durationHours: durationHours || '',
           startDate: formatDateCell(startDate),
           endDate: formatDateCell(endDate),
+          settlementDate,
           trainingYear: extractYearValue(row, columnIndexMap),
           trainingMonth: extractMonthValue(row, columnIndexMap),
           sessionKey,
@@ -434,6 +460,7 @@ function createDeliveryValidation() {
     skippedRows: 0,
     internalRows: 0,
     channelRows: 0,
+    invalidSettlementDates: 0,
     skippedSheets: [],
     dirtyRows: [],
     unmatchedCenters: createIssueBucket(),
@@ -510,6 +537,9 @@ function buildDeliveryWarnings(validation) {
   if (validation.unmatchedCourses.count) {
     warnings.push(`有 ${validation.unmatchedCourses.count.toLocaleString('zh-CN')} 条记录的课程不在对应建设中心承接范围内。示例：${validation.unmatchedCourses.samples.map(formatIssueSample).join('；')}`);
   }
+  if (validation.invalidSettlementDates) {
+    warnings.push(`有 ${validation.invalidSettlementDates.toLocaleString('zh-CN')} 条已匹配记录的培训结算时间为空或无法识别；记录保留在脏数据中，使用时间筛选时不纳入当前结果。`);
+  }
   if (validation.skippedSheets.length) {
     warnings.push(...validation.skippedSheets.slice(0, 5));
   }
@@ -532,6 +562,7 @@ function finalizeDeliveryValidation(validation) {
     skippedRows: validation.skippedRows,
     internalRows: validation.internalRows,
     channelRows: validation.channelRows,
+    invalidSettlementDates: validation.invalidSettlementDates,
     unmatchedCenters: finalizeIssueBucket(validation.unmatchedCenters),
     unmatchedInternalPlaces: finalizeIssueBucket(validation.unmatchedInternalPlaces),
     unmatchedCourses: finalizeIssueBucket(validation.unmatchedCourses),

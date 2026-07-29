@@ -1,0 +1,30 @@
+{
+  "deliveryCenters": [
+    {
+      "key": "mindray-wuhan-training-center",
+      "displayName": "Wuhan Training Center",
+      "china": [
+        "武汉培训中心",
+        "武汉培训基地"
+      ],
+      "international": [
+        "TC-MR-Wuhan",
+        "Mindray Wuhan",
+        "Wuhan Training Center"
+      ]
+    },
+    {
+      "key": "mindray-shenzhen-training-center",
+      "displayName": "Shenzhen Training Center",
+      "china": [
+        "深圳培训中心",
+        "深圳培训基地"
+      ],
+      "international": [
+        "TC-MR-Shenzhen",
+        "Mindray Shenzhen",
+        "Shenzhen Training Center"
+      ]
+    }
+  ]
+}

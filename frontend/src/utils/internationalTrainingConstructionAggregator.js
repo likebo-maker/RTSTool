@@ -1,5 +1,6 @@
 import { applyPointOffsets } from '../services/geoCacheService';
 import { getInternationalTrainingRegionGroups } from './internationalTrainingConstructionConfig';
+import { hasInvalidInternationalTrainingConstructionField } from './internationalTrainingConstructionDataQuality';
 
 export const DEFAULT_INTERNATIONAL_TRAINING_CONSTRUCTION_FILTERS = {
   secondaryRegions: [],
@@ -19,51 +20,50 @@ export function collectInternationalTrainingConstructionOptions(records) {
   return Object.fromEntries(
     INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.map(({ key, recordField }) => [
       key,
-      sortTextValues(uniqueValues((records || []).map((record) => record[recordField])))
+      sortTextValues(uniqueValues(
+        (records || [])
+          .filter((record) => !hasInvalidInternationalTrainingConstructionField(record, recordField))
+          .map((record) => record[recordField])
+      ))
     ])
   );
 }
 
 export function buildInternationalTrainingConstructionDynamicOptions(records, filters, fallbackOptions = null) {
   const allOptions = fallbackOptions || collectInternationalTrainingConstructionOptions(records);
-  const selectedSets = Object.fromEntries(
-    INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.map(({ key }) => [
-      key,
-      buildEffectiveSelection(filters?.[key] || [], allOptions[key] || [])
-    ])
-  );
-  const buckets = Object.fromEntries(INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.map(({ key }) => [key, new Set()]));
-
-  (records || []).forEach((record) => {
-    INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.forEach((targetField) => {
-      const matchesOtherFilters = INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.every((field) => {
-        if (field.key === targetField.key) return true;
-        const selectedSet = selectedSets[field.key];
-        return !selectedSet.size || selectedSet.has(record[field.recordField]);
-      });
-      if (!matchesOtherFilters) return;
+  return Object.fromEntries(INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.map((targetField, targetIndex) => {
+    const values = new Set();
+    (records || []).forEach((record) => {
+      const matchesPreviousFilters = INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS
+        .slice(0, targetIndex)
+        .every((field) => matchesConstructionDimension(record, field, filters, allOptions));
+      if (!matchesPreviousFilters || hasInvalidInternationalTrainingConstructionField(record, targetField.recordField)) return;
       const value = record[targetField.recordField];
-      if (value) buckets[targetField.key].add(value);
+      if (value) values.add(value);
     });
-  });
-
-  return Object.fromEntries(
-    INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.map(({ key }) => [
-      key,
-      (allOptions[key] || []).filter((value) => buckets[key].has(value))
-    ])
-  );
-}
-
-export function applyInternationalTrainingConstructionFilters(records, filters = DEFAULT_INTERNATIONAL_TRAINING_CONSTRUCTION_FILTERS) {
-  return (records || []).filter((record) => INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.every(({ key, recordField }) => {
-    const selected = filters?.[key];
-    return !Array.isArray(selected) || (selected.length > 0 && selected.includes(record[recordField]));
+    return [
+      targetField.key,
+      (allOptions[targetField.key] || []).filter((value) => values.has(value))
+    ];
   }));
 }
 
+export function applyInternationalTrainingConstructionFilters(
+  records,
+  filters = DEFAULT_INTERNATIONAL_TRAINING_CONSTRUCTION_FILTERS,
+  options = {}
+) {
+  const allOptions = options.allOptions || collectInternationalTrainingConstructionOptions(records);
+  return (records || []).filter((record) =>
+    INTERNATIONAL_TRAINING_CONSTRUCTION_FILTER_FIELDS.every((field) =>
+      matchesConstructionDimension(record, field, filters, allOptions)
+    )
+  );
+}
+
 export function buildInternationalTrainingConstructionDashboard(records, filters = DEFAULT_INTERNATIONAL_TRAINING_CONSTRUCTION_FILTERS) {
-  const filteredRecords = applyInternationalTrainingConstructionFilters(records, filters);
+  const allOptions = collectInternationalTrainingConstructionOptions(records);
+  const filteredRecords = applyInternationalTrainingConstructionFilters(records, filters, { allOptions });
   // A center expands into center-course records. Contract totals must use the
   // unique center layer so a multi-course center is counted only once.
   const centerStats = Object.entries(groupBy(filteredRecords, 'centerName'))
@@ -125,7 +125,11 @@ function buildCenterStat(centerName, records) {
   if (!centerName || !records?.length) return null;
   const first = records[0];
   const courseNames = uniqueValues(records.map((record) => record.courseName));
-  const productLines = uniqueValues(records.map((record) => record.productLine));
+  const productLines = uniqueValues(
+    records
+      .filter((record) => !hasInvalidInternationalTrainingConstructionField(record, 'productLine'))
+      .map((record) => record.productLine)
+  );
   return {
     centerName,
     country: first.country || '',
@@ -191,6 +195,7 @@ function aggregateCentersByValue(centerStats, field) {
 function aggregateRecordsByValue(records, field) {
   const counter = new Map();
   (records || []).forEach((record) => {
+    if (hasInvalidInternationalTrainingConstructionField(record, field)) return;
     const value = record[field];
     if (!value) return;
     counter.set(value, (counter.get(value) || 0) + 1);
@@ -237,10 +242,20 @@ function formatLocationSource(source) {
   return 'Country capital';
 }
 
-function buildEffectiveSelection(selectedValues, baseValues) {
+function matchesConstructionDimension(record, field, filters, allOptions) {
+  const selected = Array.isArray(filters?.[field.key]) ? filters[field.key] : [];
+  const base = allOptions?.[field.key] || [];
+  if (!selected.length) return false;
+  if (hasInvalidInternationalTrainingConstructionField(record, field.recordField)) {
+    return isAllSelection(selected, base);
+  }
+  return isAllSelection(selected, base) || selected.includes(record[field.recordField]);
+}
+
+function isAllSelection(selectedValues, baseValues) {
+  const selected = new Set(selectedValues || []);
   const base = (baseValues || []).filter(Boolean);
-  const selected = new Set((selectedValues || []).filter((value) => base.includes(value)));
-  return base.length > 0 && base.every((value) => selected.has(value)) ? new Set() : selected;
+  return base.length > 0 && base.every((value) => selected.has(value));
 }
 
 function groupBy(records, field) {

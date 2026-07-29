@@ -35,11 +35,14 @@
         <div ref="chartRef" class="global-merged-map-root"></div>
 
         <div class="global-merged-source-legend">
-          <span class="qualification-map-legend-title">Data Source</span>
-          <div v-for="source in sourceLegend" :key="source.name" class="global-merged-source-row">
-            <span class="global-merged-source-dot" :style="{ background: source.color, boxShadow: `0 0 10px ${source.color}` }"></span>
-            <span>{{ source.name }}</span>
-            <strong>{{ source.count }}</strong>
+          <span class="qualification-map-legend-title">{{ legendTitle }}</span>
+          <div v-for="item in pointLegend" :key="item.key" class="global-merged-source-row">
+            <span class="global-merged-source-dot" :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"></span>
+            <span class="global-merged-source-copy">
+              <span>{{ item.name }}</span>
+              <small v-if="item.sessionCount != null">{{ formatNumber(item.sessionCount) }} sessions · {{ formatNumber(item.attendanceCount) }} attendance</small>
+            </span>
+            <strong v-if="item.sessionCount == null">{{ item.count }}</strong>
           </div>
         </div>
 
@@ -112,6 +115,11 @@ import * as echarts from 'echarts';
 import { LoaderCircle, MapPinned, Maximize2, Minimize2, X } from 'lucide-vue-next';
 import worldCountriesGeo from '../data/worldCountriesGeo.json';
 import { MAP_POINT_SYMBOL_SIZE } from '../utils/offlineChinaMap';
+import {
+  buildGlobalPointLegend,
+  resolveGlobalPointColor,
+  resolveGlobalPointSymbolSize
+} from '../utils/globalMergedMapVisuals';
 
 const props = defineProps({
   kicker: { type: String, default: 'GLOBAL OFFLINE DISTRIBUTION' },
@@ -124,17 +132,14 @@ const props = defineProps({
   fullscreenActive: { type: Boolean, default: false },
   emptyText: { type: String, default: 'Import at least one regional dataset to display the merged map.' },
   rankingTitle: { type: String, default: 'Location TOP10' },
-  rankingMetricLabel: { type: String, default: 'records' }
+  rankingMetricLabel: { type: String, default: 'records' },
+  legendTitle: { type: String, default: 'Data Source' },
+  legendItems: { type: Array, default: () => [] }
 });
 
 const emit = defineEmits(['enter-fullscreen', 'exit-fullscreen']);
 
 const WORLD_MAP_NAME = 'global-merged-offline-world';
-const SOURCE_COLORS = {
-  China: '#22d3ee',
-  International: '#a78bfa',
-  Combined: '#22c55e'
-};
 const chartRef = ref(null);
 const selectedPoint = ref(null);
 const errorMessage = ref('');
@@ -145,16 +150,11 @@ const rankedPoints = computed(() => [...props.points]
   .sort((left, right) => Number(right.value || 0) - Number(left.value || 0) || String(left.name).localeCompare(String(right.name), 'en'))
   .slice(0, 10));
 
-const sourceLegend = computed(() => {
-  const counts = { China: 0, International: 0, Combined: 0 };
-  props.points.forEach((point) => {
-    const key = SOURCE_COLORS[point.source] ? point.source : 'International';
-    counts[key] += 1;
-  });
-  return Object.entries(counts)
-    .map(([name, count]) => ({ name, count, color: SOURCE_COLORS[name] }))
-    .filter((item) => item.count > 0);
-});
+const pointLegend = computed(() => (
+  props.legendItems.length
+    ? props.legendItems
+    : buildGlobalPointLegend(props.points)
+));
 
 onMounted(async () => {
   window.addEventListener('resize', resizeChart);
@@ -206,7 +206,7 @@ function renderChart() {
     .map((point) => ({
       ...point,
       value: [Number(point.coords[0]), Number(point.coords[1]), Number(point.value || 0)],
-      itemStyle: pointStyle(point.source)
+      itemStyle: pointStyle(point)
     }));
 
   chartInstance.setOption({
@@ -248,7 +248,10 @@ function renderChart() {
         zlevel: 4,
         data,
         symbol: 'circle',
-        symbolSize: MAP_POINT_SYMBOL_SIZE.normal,
+        // Service qualification and delivery snapshots can provide a
+        // quantity-based diameter. Other merged points retain the common size.
+        symbolSize: (value, params) =>
+          resolveGlobalPointSymbolSize(params.data, MAP_POINT_SYMBOL_SIZE.normal),
         rippleEffect: { brushType: 'stroke', scale: 3.4, period: 4 },
         label: { show: false },
         emphasis: { scale: 1.4, label: { show: false } }
@@ -258,8 +261,8 @@ function renderChart() {
   requestAnimationFrame(resizeChart);
 }
 
-function pointStyle(source) {
-  const color = SOURCE_COLORS[source] || SOURCE_COLORS.International;
+function pointStyle(point) {
+  const color = resolveGlobalPointColor(point);
   return {
     color,
     borderColor: '#f8fafc',
@@ -278,6 +281,7 @@ function formatTooltip(params) {
     `Region: ${escapeHtml(point.region || '-')}`,
     `Location: ${escapeHtml(point.location || point.country || '-')}`
   ];
+  if (point.sourceBreakdown) rows.push(`Source Breakdown: ${escapeHtml(point.sourceBreakdown)}`);
   (point.metrics || []).slice(0, 4).forEach((metric) => rows.push(`${escapeHtml(metric.label)}: ${escapeHtml(formatMetric(metric.value))}`));
   rows.push('<span style="color:#7dd3fc">Click for details</span>');
   return rows.join('<br/>');

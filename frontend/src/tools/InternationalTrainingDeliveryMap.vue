@@ -30,7 +30,14 @@
 
     <section v-if="!fullscreenActive || fullscreenFiltersOpen" class="glass-panel qualification-filter-panel">
       <div class="panel-title-row"><div><p class="section-kicker">FILTER CONTROLS</p><h2>Filters</h2></div><span class="status-pill" :class="hasData ? 'success' : 'warning'">{{ loading ? 'Processing data' : dataStatusText }}</span></div>
-      <div class="international-training-construction-filter-grid">
+      <div class="international-training-delivery-filter-grid">
+        <TrainingDateRangeFilter
+          v-model:start-date="draftFilters.startDate"
+          v-model:end-date="draftFilters.endDate"
+          label="Settlement Date"
+          :minimum="allOptions.dateBounds?.minimum"
+          :maximum="allOptions.dateBounds?.maximum"
+        />
         <QualificationFilterSelect v-for="field in filterFields" :key="field.key" v-model="draftFilters[field.key]" :label="field.label" :options="dynamicFilterOptions[field.key] || []" :all-options="allOptions[field.key] || []" preserve-external-values searchable :search-placeholder="field.placeholder" collapse-label="Collapse" all-label="All" empty-text="No options" all-selected-text="All" unselected-text="Not selected" multi-separator=", " />
         <div class="qualification-filter-actions"><button class="primary-button" type="button" :disabled="interactionDisabled" @click="applyFilters"><Search :size="17" /><span>Search</span></button><button class="ghost-button" type="button" :disabled="interactionDisabled" @click="resetFilters"><Eraser :size="17" /><span>Reset</span></button></div>
       </div>
@@ -44,7 +51,7 @@
     <section class="qualification-main-grid">
       <div class="training-map-stage">
         <section v-if="fullscreenActive" class="fullscreen-kpi-overlay"><article v-for="metric in metricCards" :key="`fullscreen-${metric.key}`" class="fullscreen-kpi-card" :class="metric.tone"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></article></section>
-        <InternationalTrainingDeliveryWorldMap :active="active" :points="dashboard.mapPoints" :loading="loading" :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen" :selected-point="selectedPoint" :selected-regions="appliedFilters.secondaryRegions" :display-mode="displayMode" :empty-text="emptyStateText" @select-point="openPointDetail" @update:display-mode="displayMode = $event" />
+        <InternationalTrainingDeliveryWorldMap :active="active" :points="dashboard.mapPoints" :region-stats="dashboard.regionStats" :loading="loading" :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen" :selected-point="selectedPoint" :selected-regions="appliedFilters.secondaryRegions" :display-mode="displayMode" :empty-text="emptyStateText" @select-point="openPointDetail" @update:display-mode="displayMode = $event" />
       </div>
 
       <aside class="qualification-side-panel"><section class="glass-panel qualification-side-tabs">
@@ -75,6 +82,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
 import { AlertTriangle, Award, BookOpenCheck, CircleX, Download, Eraser, ListOrdered, LoaderCircle, Maximize2, Minimize2, Presentation, RotateCcw, Search, ShieldAlert, Upload, Users, X } from 'lucide-vue-next';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
+import TrainingDateRangeFilter from '../components/TrainingDateRangeFilter.vue';
 import InternationalTrainingDeliveryWorldMap from '../components/InternationalTrainingDeliveryWorldMap.vue';
 import EChartPanel from '../components/EChartPanel.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
@@ -85,6 +93,7 @@ import { exportInternationalTrainingDeliveryDirtyRows, exportInternationalTraini
 import { parseInternationalTrainingDeliveryFiles } from '../utils/internationalTrainingDeliveryParser';
 import { normalizeInternationalTrainingDeliveryRecords } from '../utils/internationalTrainingDeliveryConfig';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
+import { validateTrainingSettlementDateRange } from '../utils/trainingSettlementDate';
 
 const props = defineProps({ canExportExcel: { type: Boolean, default: true }, fullscreenActive: { type: Boolean, default: false }, active: { type: Boolean, default: true }, allowImport: { type: Boolean, default: true } });
 const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen', 'dataset-updated']);
@@ -177,7 +186,7 @@ async function handleFileImport(event) {
     importOverlay.mode = 'success';
     importOverlay.progress = 100;
     importOverlay.message = `Imported ${records.value.length.toLocaleString('en-US')} training records.`;
-    warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded. Export Dirty Data to review the original data and reason.` : importWarnings.value[0] || '';
+    warningMessage.value = resolveImportWarning();
     emit('log', `International training delivery import completed: ${records.value.length} records.`);
     closeTimer = setTimeout(closeImportOverlay, 800);
   } catch (error) {
@@ -191,27 +200,39 @@ async function handleFileImport(event) {
 
 async function applyFilters() {
   if (!hasData.value) { warningMessage.value = 'Please import international training delivery data first.'; return; }
+  const dateValidation = validateTrainingSettlementDateRange(draftFilters);
+  if (!dateValidation.valid) {
+    warningMessage.value = dateValidation.reason === 'reversed'
+      ? 'Settlement Date From cannot be later than Settlement Date To.'
+      : 'Select both Settlement Date From and Settlement Date To.';
+    return;
+  }
   const missing = filterFields.filter((field) => !draftFilters[field.key]?.length).map((field) => field.label);
   if (missing.length) { warningMessage.value = `Please select: ${missing.join(', ')}. "All" is also a valid selection.`; return; }
   await runFilterOperation(() => { appliedFilters.value = cloneInternationalTrainingDeliveryFilters(draftFilters); selectedPoint.value = ''; });
-  warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded during import.` : importWarnings.value[0] || '';
+  warningMessage.value = resolveImportWarning();
   emit('log', `International training delivery filters applied: ${dashboard.value.summary.recordCount} records.`);
 }
 
 async function resetFilters() {
   if (!hasData.value) { warningMessage.value = 'Please import international training delivery data first.'; return; }
   await runFilterOperation(() => { resetFiltersToAll(); selectedPoint.value = ''; });
-  warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded during import.` : importWarnings.value[0] || '';
+  warningMessage.value = resolveImportWarning();
 }
 
 async function runFilterOperation(operation) {
   isFiltering.value = true;
   await nextTick();
   await nextFrame();
-  operation();
-  await nextTick();
-  await nextFrame();
-  isFiltering.value = false;
+  try {
+    await runWithMinimumVisibleTime(async () => {
+      operation();
+      await nextTick();
+      await nextFrame();
+    }, 450);
+  } finally {
+    isFiltering.value = false;
+  }
 }
 
 function resetFiltersToAll() {
@@ -264,6 +285,7 @@ async function loadLastDataset() {
     dirtyRows.value = saved.payload.dirtyRows || [];
     importWarnings.value = saved.payload.warnings || [];
     resetFiltersToAll();
+    warningMessage.value = resolveImportWarning();
   } catch (error) { console.warn('Unable to load international training delivery dataset.', error); }
 }
 
@@ -275,6 +297,15 @@ function updateImportProgress(event = {}) { importOverlay.progress = Math.max(im
 function markImportStepFailed() { const activeStep = importOverlay.steps.find((step) => step.status === 'processing') || importOverlay.steps.find((step) => step.status === 'pending'); if (activeStep) activeStep.status = 'failed'; }
 function emptyPointDetail() { return { pointStat: null, pointRecords: [], productLineDistribution: [], courseDistribution: [], trendSeries: [], detailRows: [] }; }
 function formatNumber(value) { return Number(value || 0).toLocaleString('en-US'); }
+function resolveImportWarning() {
+  if (records.value.length && !allOptions.value.dateBounds?.minimum) {
+    return 'The latest dataset does not include the Settlement Date column. Re-import a workbook containing this column to use the date filter.';
+  }
+  if (dirtyRows.value.length) {
+    return `${dirtyRows.value.length.toLocaleString('en-US')} rows require review. Export Dirty Data to review the original data and reason.`;
+  }
+  return importWarnings.value[0] || '';
+}
 function nextFrame() { return new Promise((resolve) => { const schedule = typeof window !== 'undefined' && window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : setTimeout; schedule(resolve); }); }
 
 function buildBarOption(series, seriesName) {

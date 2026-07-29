@@ -10,14 +10,16 @@ export const DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS = {
 };
 
 export function collectInternationalQualificationOptions(records) {
-  return {
-    secondaryRegions: sortTextValues(uniqueValues(records.map((record) => record.secondaryRegion))),
-    countries: sortTextValues(uniqueValues(records.map((record) => record.country))),
-    productLines: sortTextValues(uniqueValues(records.map((record) => record.productLine))),
-    subProductLines: sortTextValues(uniqueValues(records.map((record) => record.subProductLine))),
-    modelCategories: sortTextValues(uniqueValues(records.map((record) => record.modelCategory))),
-    qualificationTypes: sortTextValues(uniqueValues(records.map((record) => record.qualificationType)))
-  };
+  return Object.fromEntries(
+    INTERNATIONAL_FILTER_FIELDS.map((field) => [
+      field.key,
+      sortTextValues(uniqueValues(
+        records
+          .filter((record) => !hasInvalidFilterField(record, field.recordField))
+          .map((record) => record[field.recordField])
+      ))
+    ])
+  );
 }
 
 export function buildInternationalDynamicFilterOptions(records, filters, fallbackOptions = null) {
@@ -27,12 +29,14 @@ export function buildInternationalDynamicFilterOptions(records, filters, fallbac
 
   records.forEach((record) => {
     INTERNATIONAL_FILTER_FIELDS.forEach((targetField) => {
+      if (excludeChinaForApacScope(record, filters, baseOptions)) return;
       for (const field of INTERNATIONAL_FILTER_FIELDS) {
         if (field.key === targetField.key) continue;
         const selectedSet = selectedSets[field.key];
         if (!selectedSet?.size) continue;
-        if (!selectedSet.has(record[field.recordField])) return;
+        if (hasInvalidFilterField(record, field.recordField) || !selectedSet.has(record[field.recordField])) return;
       }
+      if (hasInvalidFilterField(record, targetField.recordField)) return;
       const value = record[targetField.recordField];
       if (value) buckets[targetField.key].add(value);
     });
@@ -48,19 +52,24 @@ export function buildInternationalDynamicFilterOptions(records, filters, fallbac
 
 export function applyInternationalQualificationFilters(records, filters = DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS, options = {}) {
   const skipField = options.skipField || '';
+  const baseOptions = options.baseOptions || collectInternationalQualificationOptions(records);
   return records.filter((record) => {
-    if (skipField !== 'secondaryRegions' && !matchesMultiSelect(record.secondaryRegion, filters.secondaryRegions)) return false;
-    if (skipField !== 'countries' && !matchesMultiSelect(record.country, filters.countries)) return false;
-    if (skipField !== 'productLines' && !matchesMultiSelect(record.productLine, filters.productLines)) return false;
-    if (skipField !== 'subProductLines' && !matchesMultiSelect(record.subProductLine, filters.subProductLines)) return false;
-    if (skipField !== 'modelCategories' && !matchesMultiSelect(record.modelCategory, filters.modelCategories)) return false;
-    if (skipField !== 'qualificationTypes' && !matchesMultiSelect(record.qualificationType, filters.qualificationTypes)) return false;
+    if (excludeChinaForApacScope(record, filters, baseOptions)) return false;
+    for (const field of INTERNATIONAL_FILTER_FIELDS) {
+      if (skipField === field.key) continue;
+      if (hasInvalidFilterField(record, field.recordField)) {
+        if (isNarrowedSelection(filters[field.key], baseOptions[field.key])) return false;
+        continue;
+      }
+      if (!matchesMultiSelect(record[field.recordField], filters[field.key])) return false;
+    }
     return true;
   });
 }
 
 export function buildInternationalQualificationDashboard(records, filters = DEFAULT_INTERNATIONAL_QUALIFICATION_FILTERS) {
-  const filteredRecords = applyInternationalQualificationFilters(records, filters);
+  const baseOptions = collectInternationalQualificationOptions(records);
+  const filteredRecords = applyInternationalQualificationFilters(records, filters, { baseOptions });
   const countryMap = groupBy(filteredRecords, 'country');
   const countryStats = Object.entries(countryMap)
     .map(([country, countryRecords]) => buildCountryStat(country, countryRecords))
@@ -222,6 +231,7 @@ function getRiskLevel({ expiredQualifications, expiring30, expiring60, totalCoun
 function aggregateValueSeries(records, field, limit = Infinity) {
   const counter = new Map();
   records.forEach((record) => {
+    if (hasInvalidFilterField(record, field)) return;
     const key = record[field];
     if (!key) return;
     counter.set(key, (counter.get(key) || 0) + 1);
@@ -230,6 +240,22 @@ function aggregateValueSeries(records, field, limit = Infinity) {
     .map(([name, value]) => ({ name, value }))
     .sort((left, right) => right.value - left.value || left.name.localeCompare(right.name, 'en'))
     .slice(0, limit);
+}
+
+function hasInvalidFilterField(record, recordField) {
+  return Array.isArray(record?.invalidFilterFields) && record.invalidFilterFields.includes(recordField);
+}
+
+function isNarrowedSelection(selectedValues, baseValues) {
+  const selected = new Set((selectedValues || []).filter(Boolean));
+  const base = new Set((baseValues || []).filter(Boolean));
+  return selected.size > 0 && (selected.size !== base.size || [...base].some((value) => !selected.has(value)));
+}
+
+function excludeChinaForApacScope(record, filters, baseOptions) {
+  return record?.country === 'China' &&
+    (filters?.secondaryRegions || []).includes('APAC') &&
+    isNarrowedSelection(filters?.secondaryRegions, baseOptions?.secondaryRegions);
 }
 
 function countUniquePeople(records) {

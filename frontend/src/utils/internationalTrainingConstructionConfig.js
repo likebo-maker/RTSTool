@@ -6,12 +6,25 @@ import {
   resolveGlobalSecondaryRegion,
   resolveWorldCountryCapital
 } from './globalRegionMap';
+import {
+  canonicalizeInternationalTrainingConstructionProductLine,
+  withInternationalTrainingConstructionDataQuality
+} from './internationalTrainingConstructionDataQuality';
 
 export const UNSPECIFIED_COURSE = 'COURSE NOT MAINTAINED';
 export const UNSPECIFIED_PRODUCT_LINE = 'PRODUCT LINE NOT MAINTAINED';
 
 const LEGACY_UNSPECIFIED_COURSE = '未维护课程';
 const LEGACY_UNSPECIFIED_PRODUCT_LINE = '未维护产线';
+
+const CENTER_TYPE_STYLES = {
+  'Global TC': { key: 'global', label: 'Global TC', color: '#22c55e' },
+  'Region TC': { key: 'region', label: 'Region TC', color: '#a78bfa' },
+  'Country TC': { key: 'channel-country', label: 'Channel / Country TC', color: '#22d3ee' },
+  'Channel TC': { key: 'channel-country', label: 'Channel / Country TC', color: '#22d3ee' },
+  'Center type not maintained': { key: 'not-maintained', label: 'Center Type Not Maintained', color: '#64748b' }
+};
+const OTHER_CENTER_TYPE_COLORS = ['#f59e0b', '#f472b6', '#60a5fa', '#14b8a6', '#fb7185', '#c084fc'];
 
 const CHINA_REGION = {
   name: 'CHINA',
@@ -91,7 +104,7 @@ export function splitCertifiedCourses(value) {
 
 export function normalizeInternationalTrainingConstructionRecord(record) {
   const contract = classifyInternationalTrainingContractStatus(record?.contractStatus);
-  return {
+  return withInternationalTrainingConstructionDataQuality({
     ...record,
     productLine: formatInternationalConstructionProductLine(record?.productLine),
     courseName: formatInternationalConstructionCourse(record?.courseName),
@@ -100,7 +113,7 @@ export function normalizeInternationalTrainingConstructionRecord(record) {
     isSigned: contract.isSigned,
     isInternal: contract.isInternal,
     auditResult: formatInternationalConstructionAuditResult(record?.auditResult)
-  };
+  });
 }
 
 export function normalizeInternationalTrainingConstructionRecords(records) {
@@ -109,7 +122,8 @@ export function normalizeInternationalTrainingConstructionRecords(records) {
 
 export function formatInternationalConstructionProductLine(value) {
   const raw = String(value || '').trim();
-  return raw === LEGACY_UNSPECIFIED_PRODUCT_LINE ? UNSPECIFIED_PRODUCT_LINE : raw || UNSPECIFIED_PRODUCT_LINE;
+  const normalized = raw === LEGACY_UNSPECIFIED_PRODUCT_LINE ? UNSPECIFIED_PRODUCT_LINE : raw || UNSPECIFIED_PRODUCT_LINE;
+  return canonicalizeInternationalTrainingConstructionProductLine(normalized);
 }
 
 export function formatInternationalConstructionCourse(value) {
@@ -157,6 +171,26 @@ export function formatInternationalConstructionCenterType(value) {
   }, 'Center type not maintained');
 }
 
+export function getInternationalTrainingCenterTypeStyle(value) {
+  const centerType = formatInternationalConstructionCenterType(value);
+  if (CENTER_TYPE_STYLES[centerType]) return CENTER_TYPE_STYLES[centerType];
+  const colorIndex = stableTextHash(centerType) % OTHER_CENTER_TYPE_COLORS.length;
+  return {
+    key: `other-${normalizeGlobalKey(centerType) || colorIndex}`,
+    label: centerType,
+    color: OTHER_CENTER_TYPE_COLORS[colorIndex]
+  };
+}
+
+export function buildInternationalTrainingCenterTypeLegend(centerTypes) {
+  const legendByKey = new Map();
+  (centerTypes || []).forEach((centerType) => {
+    const style = getInternationalTrainingCenterTypeStyle(centerType);
+    if (!legendByKey.has(style.key)) legendByKey.set(style.key, style);
+  });
+  return [...legendByKey.values()];
+}
+
 function translateKnownValue(value, translations, fallback) {
   const raw = String(value || '').trim();
   if (!raw) return fallback;
@@ -166,4 +200,8 @@ function translateKnownValue(value, translations, fallback) {
 
 function buildCityKey(country, city) {
   return `${normalizeGlobalKey(country)}|${normalizeGlobalKey(city)}`;
+}
+
+function stableTextHash(value) {
+  return [...String(value || '')].reduce((hash, character) => ((hash * 31) + character.charCodeAt(0)) >>> 0, 0);
 }

@@ -27,6 +27,12 @@ FILTER_FIELDS = (
     ("modelCategories", "modelCategory"),
     ("qualificationTypes", "qualificationType"),
 )
+APAC_REGION = "APAC"
+CHINA_COUNTRY = "China"
+PRODUCT_LINE_VALUES = {"IVD", "IVD-A", "PMLS", "MIS"}
+PRODUCT_LINE_MARKERS = PRODUCT_LINE_VALUES | {"PLMS"}
+QUALIFICATION_TYPE_VALUES = {"MCSR", "CCAC", "MCST"}
+PLACEHOLDER_VALUES = {"", "-", "--", "/", "N/A", "NA", "NULL", "NONE", "UNKNOWN", "UNCLASSIFIED", "NOT APPLICABLE"}
 QUERY_CACHE_LIMIT = 12
 
 
@@ -90,15 +96,20 @@ class InternationalQualificationStore:
             buckets: dict[str, set[str]] = {key: set() for key, _ in FILTER_FIELDS}
             for record in dataset["records"]:
                 for target_key, target_field in FILTER_FIELDS:
+                    if self._exclude_china_for_apac_scope(record, normalized, dataset["allOptions"]):
+                        continue
                     matches_other_fields = True
                     for key, record_field in FILTER_FIELDS:
                         if key == target_key:
                             continue
                         selected = selected_sets[key]
-                        if selected and _text(record.get(record_field)) not in selected:
+                        if selected and (
+                            self._has_invalid_filter_field(record, record_field)
+                            or _text(record.get(record_field)) not in selected
+                        ):
                             matches_other_fields = False
                             break
-                    if matches_other_fields:
+                    if matches_other_fields and not self._has_invalid_filter_field(record, target_field):
                         value = _text(record.get(target_field))
                         if value:
                             buckets[target_key].add(value)
@@ -117,7 +128,7 @@ class InternationalQualificationStore:
             cache_key = self._cache_key(normalized)
             cached = self._query_cache.get(cache_key)
             if cached is None:
-                filtered_records = self._filter_records(dataset["records"], normalized)
+                filtered_records = self._filter_records(dataset["records"], normalized, dataset["allOptions"])
                 cached = self._build_dashboard(filtered_records)
                 self._remember(self._query_cache, cache_key, cached)
             else:
@@ -132,7 +143,7 @@ class InternationalQualificationStore:
             normalized = self._normalize_filters(filters, dataset["allOptions"])
             country_name = _text(country)
             records = [
-                record for record in self._filter_records(dataset["records"], normalized)
+                record for record in self._filter_records(dataset["records"], normalized, dataset["allOptions"])
                 if _text(record.get("country")) == country_name
             ]
             country_stat = self._build_country_stat(country_name, records)
@@ -156,7 +167,10 @@ class InternationalQualificationStore:
         with self._lock:
             dataset = self._load_dataset()
             normalized = self._normalize_filters(filters, dataset["allOptions"])
-            rows = [self._export_record(record) for record in self._filter_records(dataset["records"], normalized)]
+            rows = [
+                self._export_record(record)
+                for record in self._filter_records(dataset["records"], normalized, dataset["allOptions"])
+            ]
         return self._to_excel(rows, "Qualification Details"), "international_service_qualification_results.xlsx"
 
     def country_export(self, country: str, filters: dict[str, Any]) -> tuple[bytes, str]:
@@ -166,7 +180,7 @@ class InternationalQualificationStore:
             country_name = _text(country)
             rows = [
                 self._export_record(record)
-                for record in self._filter_records(dataset["records"], normalized)
+                for record in self._filter_records(dataset["records"], normalized, dataset["allOptions"])
                 if _text(record.get("country")) == country_name
             ]
         safe_country = "".join("_" if char in '\\/:*?\"<>|' else char for char in (country_name or "country"))
@@ -222,13 +236,99 @@ class InternationalQualificationStore:
         dirty_rows = dataset.get("dirtyRows") or []
         if not isinstance(records, list) or not isinstance(dirty_rows, list):
             raise InternationalQualificationDataError("The local international dataset format is invalid.")
+        prepared_dirty_rows = list(dirty_rows)
+        existing_retained_keys = {
+            self._source_row_key(row)
+            for row in prepared_dirty_rows
+            if _text(row.get("handling")).startswith("Retained")
+        }
+        for record in records:
+            if isinstance(record.get("invalidFilterFields"), list):
+                continue
+            issues = self._audit_legacy_filter_dimensions(record)
+            record["invalidFilterFields"] = [issue["field"] for issue in issues]
+            record["dataQualityIssues"] = issues
+            source_key = self._source_row_key(record)
+            if issues and source_key not in existing_retained_keys:
+                prepared_dirty_rows.append(self._build_legacy_dimension_dirty_row(record, issues))
+                existing_retained_keys.add(source_key)
         return {
             "records": records,
-            "dirtyRows": dirty_rows,
+            "dirtyRows": prepared_dirty_rows,
             "warnings": dataset.get("warnings") or [],
             "updatedAt": dataset.get("updatedAt") or "",
             "allOptions": self._collect_options(records),
         }
+
+    @staticmethod
+    def _audit_legacy_filter_dimensions(record: dict[str, Any]) -> list[dict[str, str]]:
+        product_line = _text(record.get("productLine")).upper()
+        sub_line = _text(record.get("subProductLine")).upper()
+        model_category = _text(record.get("modelCategory")).upper()
+        qualification_type = _text(record.get("qualificationType")).upper()
+        issues: list[dict[str, str]] = []
+
+        if product_line in PLACEHOLDER_VALUES or product_line.startswith("UNCLASSIFIED") or product_line not in PRODUCT_LINE_VALUES:
+            issues.append({"field": "productLine", "reason": f"Product Line is invalid: {product_line or 'blank'}."})
+        if sub_line in PLACEHOLDER_VALUES or sub_line.startswith("UNCLASSIFIED"):
+            issues.append({"field": "subProductLine", "reason": "Sub-line is blank or a placeholder."})
+        elif sub_line in PRODUCT_LINE_MARKERS:
+            issues.append({"field": "subProductLine", "reason": f"Sub-line contains a Product Line value ({sub_line})."})
+        if model_category in PLACEHOLDER_VALUES or model_category.startswith("UNCLASSIFIED"):
+            issues.append({"field": "modelCategory", "reason": "Model Category is blank or a placeholder."})
+        elif (
+            model_category in PRODUCT_LINE_MARKERS
+            or model_category in QUALIFICATION_TYPE_VALUES
+            or (sub_line and model_category == sub_line)
+        ):
+            issues.append(
+                {
+                    "field": "modelCategory",
+                    "reason": f"Model Category contains an upstream or qualification-type value ({model_category}).",
+                }
+            )
+        if (
+            qualification_type in PLACEHOLDER_VALUES
+            or qualification_type.startswith("UNCLASSIFIED")
+            or qualification_type not in QUALIFICATION_TYPE_VALUES
+        ):
+            issues.append(
+                {
+                    "field": "qualificationType",
+                    "reason": f"Qualification Type is invalid: {qualification_type or 'blank'}.",
+                }
+            )
+        return issues
+
+    @classmethod
+    def _build_legacy_dimension_dirty_row(
+        cls,
+        record: dict[str, Any],
+        issues: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        return {
+            "category": "International qualification retained dimension issue",
+            "handling": "Retained; affected dimensions hidden from filters and distributions",
+            "affectedFields": [issue["field"] for issue in issues],
+            "reason": " | ".join(issue["reason"] for issue in issues),
+            "sourceFile": _text(record.get("sourceFile")),
+            "sourceSheet": _text(record.get("sourceSheet")),
+            "sourceRow": record.get("sourceRow") or "",
+            "rawRegion": _text(record.get("rawRegion")),
+            "rawBranch": _text(record.get("rawBranch")),
+            "departmentName": _text(record.get("departmentName")),
+            # Legacy caches did not retain the workbook row. Export every stored
+            # parsed column; the next Excel import restores exact original headers.
+            "rawData": cls._export_record(record),
+        }
+
+    @staticmethod
+    def _source_row_key(row: dict[str, Any]) -> tuple[str, str, str]:
+        return (
+            _text(row.get("sourceFile")),
+            _text(row.get("sourceSheet")),
+            _text(row.get("sourceRow")),
+        )
 
     def _metadata(self, dataset: dict[str, Any]) -> dict[str, Any]:
         saved_filters = self._read_state(dataset["allOptions"])
@@ -245,7 +345,12 @@ class InternationalQualificationStore:
         options: dict[str, list[str]] = {}
         for key, record_field in FILTER_FIELDS:
             options[key] = sorted(
-                {_text(record.get(record_field)) for record in records if _text(record.get(record_field))},
+                {
+                    _text(record.get(record_field))
+                    for record in records
+                    if _text(record.get(record_field))
+                    and not self._has_invalid_filter_field(record, record_field)
+                },
                 key=lambda value: value.casefold(),
             )
         return options
@@ -273,14 +378,36 @@ class InternationalQualificationStore:
     def _all_selected_filters(self, all_options: dict[str, list[str]]) -> dict[str, list[str]]:
         return {key: list(all_options.get(key) or []) for key, _ in FILTER_FIELDS}
 
-    def _filter_records(self, records: list[dict[str, Any]], filters: dict[str, list[str]]) -> list[dict[str, Any]]:
+    def _filter_records(
+        self,
+        records: list[dict[str, Any]],
+        filters: dict[str, list[str]],
+        all_options: dict[str, list[str]],
+    ) -> list[dict[str, Any]]:
         selected = {key: set(values) for key, values in filters.items()}
         if any(not selected.get(key) for key, _ in FILTER_FIELDS):
             return []
-        return [
-            record for record in records
-            if all(_text(record.get(record_field)) in selected[key] for key, record_field in FILTER_FIELDS)
-        ]
+        narrowed = {
+            key: selected[key] != set(all_options.get(key) or [])
+            for key, _ in FILTER_FIELDS
+        }
+        filtered: list[dict[str, Any]] = []
+        for record in records:
+            if self._exclude_china_for_apac_scope(record, filters, all_options):
+                continue
+            matches = True
+            for key, record_field in FILTER_FIELDS:
+                if self._has_invalid_filter_field(record, record_field):
+                    if narrowed[key]:
+                        matches = False
+                        break
+                    continue
+                if _text(record.get(record_field)) not in selected[key]:
+                    matches = False
+                    break
+            if matches:
+                filtered.append(record)
+        return filtered
 
     def _build_dashboard(self, records: list[dict[str, Any]]) -> dict[str, Any]:
         country_records: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -369,11 +496,18 @@ class InternationalQualificationStore:
             "geoSource": "capital-coordinate",
         }
 
-    @staticmethod
-    def _aggregate(records: list[dict[str, Any]], field: str, valid_only: bool = False, limit: int | None = None) -> list[dict[str, Any]]:
+    @classmethod
+    def _aggregate(
+        cls,
+        records: list[dict[str, Any]],
+        field: str,
+        valid_only: bool = False,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         values = (
             _text(record.get(field)) for record in records
-            if not valid_only or _is_valid(record)
+            if (not valid_only or _is_valid(record))
+            and not cls._has_invalid_filter_field(record, field)
         )
         counter = Counter(value for value in values if value)
         rows = [{"name": name, "value": value} for name, value in counter.items()]
@@ -409,6 +543,26 @@ class InternationalQualificationStore:
         base = set(base_values)
         selected = set(selected_values).intersection(base)
         return set() if base and base.issubset(selected) else selected
+
+    @staticmethod
+    def _has_invalid_filter_field(record: dict[str, Any], record_field: str) -> bool:
+        invalid_fields = record.get("invalidFilterFields")
+        return isinstance(invalid_fields, list) and record_field in invalid_fields
+
+    @staticmethod
+    def _exclude_china_for_apac_scope(
+        record: dict[str, Any],
+        filters: dict[str, list[str]],
+        all_options: dict[str, list[str]],
+    ) -> bool:
+        selected_regions = set(filters.get("secondaryRegions") or [])
+        all_regions = set(all_options.get("secondaryRegions") or [])
+        region_is_narrowed = bool(selected_regions) and selected_regions != all_regions
+        return (
+            region_is_narrowed
+            and APAC_REGION in selected_regions
+            and _text(record.get("country")) == CHINA_COUNTRY
+        )
 
     def _read_state(self, all_options: dict[str, list[str]]) -> dict[str, list[str]]:
         if not self.state_path.exists():
@@ -461,6 +615,12 @@ class InternationalQualificationStore:
 
     @staticmethod
     def _export_record(record: dict[str, Any]) -> dict[str, Any]:
+        issues = record.get("dataQualityIssues") if isinstance(record.get("dataQualityIssues"), list) else []
+        issue_text = " | ".join(
+            _text(issue.get("reason"))
+            for issue in issues
+            if isinstance(issue, dict) and _text(issue.get("reason"))
+        )
         return {
             "Employee ID": _text(record.get("employeeId")),
             "Employee Name": _text(record.get("personName")),
@@ -483,6 +643,7 @@ class InternationalQualificationStore:
             "Qualification Status": _qualification_status(record),
             "Certificate Type": _text(record.get("certificateType")),
             "Certificate Status": _text(record.get("certificateStatus")),
+            "Data Quality Issues": issue_text,
             "Source File": _text(record.get("sourceFile")),
             "Source Sheet": _text(record.get("sourceSheet")),
             "Source Row": record.get("sourceRow") or "",
@@ -494,6 +655,12 @@ class InternationalQualificationStore:
         raw_columns = {f"Original - {key}": value for key, value in original.items()}
         return {
             "Category": _text(row.get("category")),
+            "Handling": _text(row.get("handling")) or "Excluded",
+            "Affected Fields": ", ".join(
+                _text(field)
+                for field in (row.get("affectedFields") or [])
+                if _text(field)
+            ),
             "Reason": _text(row.get("reason")),
             "Source File": _text(row.get("sourceFile")),
             "Source Sheet": _text(row.get("sourceSheet")),

@@ -85,6 +85,7 @@
       :metrics="globalConstructionSnapshot.metrics"
       :ranking-title="globalConstructionSnapshot.rankingTitle"
       :ranking-metric-label="globalConstructionSnapshot.rankingMetricLabel"
+      :legend-title="globalConstructionSnapshot.legendTitle"
       empty-text="Import China or International construction data to display the global map."
       @enter-fullscreen="$emit('enter-fullscreen')"
       @exit-fullscreen="$emit('exit-fullscreen')"
@@ -134,6 +135,36 @@
       @select-import="chooseGlobalImport"
     />
 
+    <section
+      v-if="activeTab === 'delivery' && activeDeliveryScope === 'global' && !fullscreenActive"
+      class="glass-panel global-delivery-date-filter-panel"
+    >
+      <div>
+        <p class="section-kicker">FILTER CONTROLS</p>
+        <h2>Settlement Date</h2>
+      </div>
+      <TrainingDateRangeFilter
+        v-model:start-date="globalDeliveryDraftFilters.startDate"
+        v-model:end-date="globalDeliveryDraftFilters.endDate"
+        label="Settlement Date"
+        :minimum="globalDeliveryDateBounds.minimum"
+        :maximum="globalDeliveryDateBounds.maximum"
+      />
+      <div class="qualification-filter-actions">
+        <button class="primary-button" type="button" :disabled="globalDeliveryFiltering || globalDeliveryLoading" @click="applyGlobalDeliveryDateFilter">
+          <Search :size="17" />
+          <span>Search</span>
+        </button>
+        <button class="ghost-button" type="button" :disabled="globalDeliveryFiltering || globalDeliveryLoading" @click="resetGlobalDeliveryDateFilter">
+          <Eraser :size="17" />
+          <span>Reset</span>
+        </button>
+      </div>
+      <span v-if="globalDeliveryFilterWarning || globalDeliveryDateSourceWarning" class="global-delivery-date-warning">
+        {{ globalDeliveryFilterWarning || globalDeliveryDateSourceWarning }}
+      </span>
+    </section>
+
     <GlobalMergedWorldMap
       v-if="activeTab === 'delivery' && activeDeliveryScope === 'global'"
       kicker="GLOBAL TRAINING CENTER DELIVERY DISTRIBUTION"
@@ -146,6 +177,8 @@
       :metrics="globalDeliverySnapshot.metrics"
       :ranking-title="globalDeliverySnapshot.rankingTitle"
       :ranking-metric-label="globalDeliverySnapshot.rankingMetricLabel"
+      :legend-title="globalDeliverySnapshot.legendTitle"
+      :legend-items="globalDeliverySnapshot.legendItems"
       empty-text="Import construction data first, then import China or International delivery data to display the global map."
       @enter-fullscreen="$emit('enter-fullscreen')"
       @exit-fullscreen="$emit('exit-fullscreen')"
@@ -182,20 +215,36 @@
       @log="forwardLog('delivery', $event)"
       @dataset-updated="refreshTrainingDataSources"
     />
+    <BlockingOperationModal
+      :visible="globalDeliveryFiltering"
+      title="Applying Filters"
+      message="Updating global delivery points, metrics, rankings, and source totals."
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue';
-import { MapPinned, Presentation } from 'lucide-vue-next';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { Eraser, MapPinned, Presentation, Search } from 'lucide-vue-next';
 import TrainingConstructionMap from './TrainingConstructionMap.vue';
 import TrainingCoverageMap from './TrainingCoverageMap.vue';
 import InternationalTrainingConstructionMap from './InternationalTrainingConstructionMap.vue';
 import InternationalTrainingDeliveryMap from './InternationalTrainingDeliveryMap.vue';
 import SharedDataImportHub from '../components/SharedDataImportHub.vue';
 import GlobalMergedWorldMap from '../components/GlobalMergedWorldMap.vue';
+import BlockingOperationModal from '../components/BlockingOperationModal.vue';
+import TrainingDateRangeFilter from '../components/TrainingDateRangeFilter.vue';
 import { LOCAL_DATASET_KEYS, loadToolDataset } from '../services/localDataStore';
 import { buildGlobalConstructionSnapshot, buildGlobalDeliverySnapshot } from '../utils/globalMergedMap';
+import {
+  createTrainingSettlementDateRange,
+  filterTrainingRecordsBySettlementDate,
+  normalizeTrainingSettlementRecords,
+  resolveTrainingSettlementDateBounds,
+  validateTrainingSettlementDateRange
+} from '../utils/trainingSettlementDate';
+import { normalizeInternationalTrainingDeliveryRecords } from '../utils/internationalTrainingDeliveryConfig';
+import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
 const props = defineProps({
   canExportExcel: {
@@ -240,6 +289,21 @@ const chinaConstructionDataset = ref(createDatasetState());
 const internationalConstructionDataset = ref(createDatasetState());
 const chinaDeliveryDataset = ref(createDatasetState());
 const internationalDeliveryDataset = ref(createDatasetState());
+const chinaDeliveryRecords = ref([]);
+const internationalDeliveryRecords = ref([]);
+const globalDeliveryFiltering = ref(false);
+const globalDeliveryFilterWarning = ref('');
+const globalDeliveryDraftFilters = reactive(createTrainingSettlementDateRange());
+const globalDeliveryAppliedFilters = ref(createTrainingSettlementDateRange());
+const globalDeliveryDateBounds = computed(() => resolveTrainingSettlementDateBounds([
+  ...chinaDeliveryRecords.value,
+  ...internationalDeliveryRecords.value
+]));
+const globalDeliveryDateSourceWarning = computed(() => {
+  const recordCount = chinaDeliveryRecords.value.length + internationalDeliveryRecords.value.length;
+  if (!recordCount || globalDeliveryDateBounds.value.minimum) return '';
+  return 'The latest delivery datasets do not include the Settlement Date column. Re-import workbooks containing this column to use the date filter.';
+});
 
 const constructionDataSources = computed(() => [
   {
@@ -378,14 +442,68 @@ async function refreshTrainingDataSources() {
       chinaConstruction?.payload?.records || [],
       internationalConstruction?.payload?.records || []
     );
-    globalDeliverySnapshot.value = buildGlobalDeliverySnapshot(
-      chinaDelivery?.payload?.records || [],
-      internationalDelivery?.payload?.records || []
-    );
+    chinaDeliveryRecords.value = normalizeTrainingSettlementRecords(chinaDelivery?.payload?.records || []);
+    internationalDeliveryRecords.value = normalizeInternationalTrainingDeliveryRecords(internationalDelivery?.payload?.records || []);
+    setGlobalDeliveryDateFilterToAll();
+    refreshGlobalDeliverySnapshot();
   } finally {
     globalConstructionLoading.value = false;
     globalDeliveryLoading.value = false;
   }
+}
+
+async function applyGlobalDeliveryDateFilter() {
+  const validation = validateTrainingSettlementDateRange(globalDeliveryDraftFilters);
+  if (!validation.valid) {
+    globalDeliveryFilterWarning.value = validation.reason === 'reversed'
+      ? 'Settlement Date From cannot be later than Settlement Date To.'
+      : 'Select both Settlement Date From and Settlement Date To.';
+    return;
+  }
+  globalDeliveryFiltering.value = true;
+  await nextTick();
+  await nextFrame();
+  try {
+    await runWithMinimumVisibleTime(async () => {
+      globalDeliveryAppliedFilters.value = { ...globalDeliveryDraftFilters };
+      refreshGlobalDeliverySnapshot();
+      globalDeliveryFilterWarning.value = '';
+      await nextTick();
+      await nextFrame();
+    }, 450);
+  } finally {
+    globalDeliveryFiltering.value = false;
+  }
+}
+
+async function resetGlobalDeliveryDateFilter() {
+  globalDeliveryFiltering.value = true;
+  await nextTick();
+  await nextFrame();
+  try {
+    await runWithMinimumVisibleTime(async () => {
+      setGlobalDeliveryDateFilterToAll();
+      refreshGlobalDeliverySnapshot();
+      globalDeliveryFilterWarning.value = '';
+      await nextTick();
+      await nextFrame();
+    }, 450);
+  } finally {
+    globalDeliveryFiltering.value = false;
+  }
+}
+
+function setGlobalDeliveryDateFilterToAll() {
+  const all = createTrainingSettlementDateRange(globalDeliveryDateBounds.value);
+  Object.assign(globalDeliveryDraftFilters, all);
+  globalDeliveryAppliedFilters.value = { ...all };
+}
+
+function refreshGlobalDeliverySnapshot() {
+  globalDeliverySnapshot.value = buildGlobalDeliverySnapshot(
+    filterTrainingRecordsBySettlementDate(chinaDeliveryRecords.value, globalDeliveryAppliedFilters.value),
+    filterTrainingRecordsBySettlementDate(internationalDeliveryRecords.value, globalDeliveryAppliedFilters.value)
+  );
 }
 
 function datasetStateFromRecord(record) {
@@ -403,6 +521,15 @@ function createDatasetState() {
 
 function yieldToBrowser() {
   return new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
+function nextFrame() {
+  return new Promise((resolve) => {
+    const schedule = typeof window !== 'undefined' && window.requestAnimationFrame
+      ? window.requestAnimationFrame.bind(window)
+      : setTimeout;
+    schedule(resolve);
+  });
 }
 
 function forwardStatus(tabKey, message) {

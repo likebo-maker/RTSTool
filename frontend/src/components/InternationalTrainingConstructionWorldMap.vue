@@ -14,8 +14,8 @@
       <div ref="chartRef" class="qualification-amap-root"></div>
 
       <div class="qualification-map-legend">
-        <span class="qualification-map-legend-title">Contract Status</span>
-        <div v-for="item in contractLegend" :key="item.label" class="qualification-map-legend-row">
+        <span class="qualification-map-legend-title">Center Type</span>
+        <div v-for="item in centerTypeLegend" :key="item.key" class="qualification-map-legend-row">
           <span class="qualification-map-legend-dot" :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"></span>
           <span>{{ item.label }}</span>
         </div>
@@ -52,7 +52,12 @@ import * as echarts from 'echarts';
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
 import worldCountriesGeo from '../data/worldCountriesGeo.json';
 import { MAP_POINT_SYMBOL_SIZE } from '../utils/offlineChinaMap';
-import { formatInternationalConstructionContractStatus, getInternationalTrainingRegionGroups } from '../utils/internationalTrainingConstructionConfig';
+import {
+  buildInternationalTrainingCenterTypeLegend,
+  formatInternationalConstructionContractStatus,
+  getInternationalTrainingCenterTypeStyle,
+  getInternationalTrainingRegionGroups
+} from '../utils/internationalTrainingConstructionConfig';
 
 const props = defineProps({
   points: { type: Array, default: () => [] },
@@ -74,12 +79,10 @@ let chartInstance = null;
 let registered = false;
 let previousFocusIndex = -1;
 
-const contractLegend = [
-  { label: 'Signed', color: '#22c55e' },
-  { label: 'Pending Contract', color: '#f59e0b' },
-  { label: 'Status Missing', color: '#64748b' }
-];
 const regionGroups = computed(() => getInternationalTrainingRegionGroups());
+const centerTypeLegend = computed(() =>
+  buildInternationalTrainingCenterTypeLegend(props.points.map((point) => point.centerType))
+);
 const worldCountryNames = computed(() => (worldCountriesGeo.features || []).map((feature) => feature?.properties?.name).filter(Boolean));
 const regionColorMap = computed(() => new Map(regionGroups.value.map((region) => [region.name, region.color])));
 const countryRegionMap = computed(() => {
@@ -150,7 +153,7 @@ function buildMapOption() {
       name: point.centerName,
       value: [point.coords[0], point.coords[1], point.courseCount],
       ...point,
-      itemStyle: { color: getContractColor(point), borderColor: '#e0f2fe', borderWidth: 1.2, shadowBlur: 14, shadowColor: getContractColor(point) }
+      itemStyle: { color: getCenterTypeColor(point), borderColor: '#e0f2fe', borderWidth: 1.2, shadowBlur: 14, shadowColor: getCenterTypeColor(point) }
     }));
   return {
     backgroundColor: 'transparent',
@@ -169,8 +172,8 @@ function buildMapOption() {
       symbolSize: (value, params) => params.data?.centerName === props.selectedCenter ? MAP_POINT_SYMBOL_SIZE.selected : MAP_POINT_SYMBOL_SIZE.normal,
       rippleEffect: { brushType: 'stroke', scale: 3.4, period: 4 },
       itemStyle: {
-        color: (params) => getContractColor(params.data), borderColor: 'rgba(255,255,255,0.82)', borderWidth: 1.2,
-        shadowBlur: 14, shadowColor: (params) => getContractColor(params.data)
+        color: (params) => getCenterTypeColor(params.data), borderColor: 'rgba(255,255,255,0.82)', borderWidth: 1.2,
+        shadowBlur: 14, shadowColor: (params) => getCenterTypeColor(params.data)
       },
       label: { show: false }, emphasis: { scale: true, label: { show: false } }
     }]
@@ -200,6 +203,7 @@ function buildTooltip(point) {
     `Secondary Region: ${escapeHtml(point.secondaryRegion || '-')}`,
     `Country: ${escapeHtml(point.country || '-')}`,
     `Location: ${escapeHtml(location || '-')}`,
+    `Center Type: ${escapeHtml(point.centerType || '-')}`,
     `Contract Status: ${escapeHtml(formatInternationalConstructionContractStatus(point.contractStatus))}`,
     `Product Lines: ${escapeHtml((point.productLines || []).join(', ') || '-')}`,
     `Courses: ${Number(point.courseCount || 0).toLocaleString('en-US')}`
@@ -221,15 +225,15 @@ function applyFocus() {
   }
   const index = props.points.findIndex((point) => point.centerName === props.selectedCenter);
   if (index < 0) return;
+  // The detail drawer already shows the complete center data. Keep the point
+  // highlighted, but close the map tooltip so it cannot cover drawer content.
+  chartInstance.dispatchAction({ type: 'hideTip' });
   chartInstance.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: index });
-  chartInstance.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: index });
   previousFocusIndex = index;
 }
 
-function getContractColor(point) {
-  if (point?.isSigned) return '#22c55e';
-  if (point?.isInternal) return '#a78bfa';
-  return point?.contractStatus ? '#f59e0b' : '#64748b';
+function getCenterTypeColor(point) {
+  return getInternationalTrainingCenterTypeStyle(point?.centerType).color;
 }
 
 function escapeHtml(value) {

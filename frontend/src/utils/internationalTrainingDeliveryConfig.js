@@ -8,6 +8,7 @@ import {
   resolveInternationalTrainingCountry,
   resolveInternationalTrainingRegion
 } from './internationalTrainingConstructionConfig';
+import { normalizeTrainingSettlementRecord } from './trainingSettlementDate';
 
 export const UNMAPPED_PRODUCT_LINE = 'UNMAPPED PRODUCT LINE';
 
@@ -32,14 +33,14 @@ export function resolveInternationalTrainingDeliveryProductLine(value) {
 
 export function normalizeInternationalTrainingDeliveryRecord(record) {
   const trainingCenter = String(record?.trainingLocation || record?.organizer || '').trim();
-  return {
+  return normalizeTrainingSettlementRecord({
     ...record,
     // Training Location is the delivery center name. Preserve the old source
     // organizer separately for traceability, but never use it to split map dots.
     organizer: trainingCenter,
     sourceOrganizer: record?.sourceOrganizer || record?.organizer || '',
     pointKey: normalizeGlobalKey(trainingCenter)
-  };
+  });
 }
 
 export function normalizeInternationalTrainingDeliveryRecords(records) {

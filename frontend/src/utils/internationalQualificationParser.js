@@ -1,13 +1,15 @@
 import * as XLSX from 'xlsx';
 import { buildQualificationStatus, formatDateText } from './qualificationTypes';
 import {
-  hasChineseText,
   hasCountryCapitalCoordinate,
-  hasWorldCountryGeometry,
   resolveCountrySecondaryRegion,
   resolveGlobalCountry,
   resolveGlobalSecondaryRegion
 } from './globalRegionMap';
+import {
+  auditInternationalQualificationDimensions,
+  formatInternationalDimensionIssues
+} from './internationalQualificationDataQuality';
 
 const ROW_YIELD_INTERVAL = 2000;
 const INTERNATIONAL_REGION_LABEL = 'International Region';
@@ -140,9 +142,13 @@ export async function parseInternationalQualificationFiles(fileList, options = {
         if (!result) continue;
         if (result.dirtyRow) {
           dirtyRows.push(result.dirtyRow);
-          continue;
         }
-        records.push(result.record);
+        if (result.warning) {
+          warnings.push(result.warning);
+        }
+        if (result.record) {
+          records.push(result.record);
+        }
       }
 
       reportProgress?.({
@@ -200,41 +206,49 @@ function buildRecordFromRow({ row, columnIndexMap, fileName, sheetName, rowNumbe
     return createDirtyResult(dirtyContext, `Account status is not Enable: ${accountStatus || 'blank'}`);
   }
 
-  if (hasChineseText(rawRegion)) {
-    return createDirtyResult(dirtyContext, `Chinese region is not included: ${rawRegion}`);
-  }
-
   const regionIsInternational = normalizeText(rawRegion).toLowerCase() === INTERNATIONAL_REGION_LABEL.toLowerCase();
-  const secondaryRegion = regionIsInternational
+  const sourceSecondaryRegion = regionIsInternational
     ? resolveGlobalSecondaryRegion(rawBranch)
     : resolveGlobalSecondaryRegion(rawRegion);
-  const countryRaw = regionIsInternational ? departmentName : rawBranch;
+  const countryCandidates = regionIsInternational
+    ? [departmentName]
+    : [rawBranch, departmentName];
+  const countryRaw = countryCandidates.find((candidate) => resolveGlobalCountry(candidate)) || countryCandidates[0] || '';
   const country = resolveGlobalCountry(countryRaw);
 
-  if (!secondaryRegion) {
-    return createDirtyResult(dirtyContext, `Secondary region was not recognized: ${regionIsInternational ? rawBranch : rawRegion}`);
-  }
   if (!country) {
     return createDirtyResult(dirtyContext, `Country was not recognized: ${countryRaw || 'blank'}`);
   }
 
   const expectedRegion = resolveCountrySecondaryRegion(country);
-  if (expectedRegion && expectedRegion !== secondaryRegion) {
-    return createDirtyResult(dirtyContext, `Country-region mismatch: ${country} belongs to ${expectedRegion}, not ${secondaryRegion}`);
-  }
-
-  if (!hasWorldCountryGeometry(country)) {
-    return createDirtyResult(dirtyContext, `Country is missing in offline world map: ${country}`);
+  const secondaryRegion = expectedRegion || sourceSecondaryRegion;
+  if (!secondaryRegion) {
+    throw new Error(
+      `Local secondary-region configuration is missing for recognized country ${country}. ` +
+      'Add the country to globalRegionConfig.json before importing this workbook.'
+    );
   }
 
   if (!hasCountryCapitalCoordinate(country)) {
-    return createDirtyResult(dirtyContext, `Missing capital coordinate: ${country}`);
+    throw new Error(
+      `Local capital-coordinate configuration is missing for recognized country ${country}. ` +
+      'Add its capital and coordinates to globalRegionConfig.json before importing this workbook.'
+    );
   }
 
   const statusMeta = buildQualificationStatus(expiryRaw);
   const employeeId = pickFirstMeaningfulValue(row, columnIndexMap, ['employeeId']);
   const personName = pickFirstMeaningfulValue(row, columnIndexMap, ['personName']);
   const partnerName = pickFirstMeaningfulValue(row, columnIndexMap, ['partnerName']);
+  const dimensionAudit = auditInternationalQualificationDimensions({
+    productLine,
+    subProductLine,
+    modelCategory,
+    qualificationType
+  });
+  const retainedDirtyRow = dimensionAudit.issues.length
+    ? createRetainedDimensionDirtyRow(dirtyContext, dimensionAudit)
+    : null;
 
   return {
     record: {
@@ -265,8 +279,11 @@ function buildRecordFromRow({ row, columnIndexMap, fileName, sheetName, rowNumbe
       certificateStatus: pickFirstMeaningfulValue(row, columnIndexMap, ['certificateStatus']),
       sourceFile: fileName,
       sourceSheet: sheetName,
-      sourceRow: rowNumber
-    }
+      sourceRow: rowNumber,
+      invalidFilterFields: dimensionAudit.invalidFilterFields,
+      dataQualityIssues: dimensionAudit.issues
+    },
+    dirtyRow: retainedDirtyRow
   };
 }
 
@@ -274,6 +291,8 @@ function createDirtyResult(context, reason) {
   return {
     dirtyRow: {
       category: 'International qualification excluded row',
+      handling: 'Excluded',
+      affectedFields: ['record'],
       reason,
       sourceFile: context.fileName,
       sourceSheet: context.sheetName,
@@ -283,6 +302,22 @@ function createDirtyResult(context, reason) {
       departmentName: context.departmentName || '',
       rawData: context.rawData || {}
     }
+  };
+}
+
+function createRetainedDimensionDirtyRow(context, dimensionAudit) {
+  return {
+    category: 'International qualification retained dimension issue',
+    handling: 'Retained; affected dimensions hidden from filters and distributions',
+    affectedFields: dimensionAudit.invalidFilterFields,
+    reason: formatInternationalDimensionIssues(dimensionAudit.issues),
+    sourceFile: context.fileName,
+    sourceSheet: context.sheetName,
+    sourceRow: context.rowNumber,
+    rawRegion: context.rawRegion || '',
+    rawBranch: context.rawBranch || '',
+    departmentName: context.departmentName || '',
+    rawData: context.rawData || {}
   };
 }
 

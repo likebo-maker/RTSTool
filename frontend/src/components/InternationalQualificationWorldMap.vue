@@ -68,7 +68,7 @@ import * as echarts from 'echarts';
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
 import worldCountriesGeo from '../data/worldCountriesGeo.json';
 import { getGlobalRegionGroups } from '../utils/globalRegionMap';
-import { MAP_POINT_SYMBOL_SIZE } from '../utils/offlineChinaMap';
+import { createInternationalQualificationPointSizer } from '../utils/internationalQualificationMapSizing';
 
 const props = defineProps({
   points: {
@@ -244,6 +244,7 @@ function buildMapOption() {
         shadowColor: getRiskColor(point.riskLevel)
       }
     }));
+  const pointSizer = createInternationalQualificationPointSizer(scatterData);
 
   return {
     backgroundColor: 'transparent',
@@ -297,9 +298,10 @@ function buildMapOption() {
         data: scatterData,
         symbol: 'circle',
         symbolSize(value, params) {
-          if (params.data?.country === props.focusedCountry) return MAP_POINT_SYMBOL_SIZE.focused;
-          if (params.data?.country === props.selectedCountry) return MAP_POINT_SYMBOL_SIZE.selected;
-          return MAP_POINT_SYMBOL_SIZE.normal;
+          return pointSizer(params.data, {
+            focused: params.data?.country === props.focusedCountry,
+            selected: params.data?.country === props.selectedCountry
+          });
         },
         rippleEffect: {
           brushType: 'stroke',
@@ -339,7 +341,10 @@ function buildGeoRegions() {
   return worldCountryNames.value.map((country) => {
     const regionName = countryRegionMap.value.get(country);
     const color = regionColorMap.value.get(regionName) || '#38bdf8';
-    const selected = Boolean(regionName) && (!hasFocusedRegionScope || selectedSet.has(regionName));
+    const chinaExcludedFromApac = hasFocusedRegionScope && selectedSet.has('APAC') && country === 'China';
+    const selected = Boolean(regionName) &&
+      !chinaExcludedFromApac &&
+      (!hasFocusedRegionScope || selectedSet.has(regionName));
     return {
       name: country,
       itemStyle: {

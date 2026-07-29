@@ -44,7 +44,7 @@
           v-model="draftFilters[field.key]"
           :label="field.label"
           :options="dynamicFilterOptions[field.key] || []"
-          :all-options="allOptions[field.key] || []"
+          :all-options="dynamicFilterOptions[field.key] || []"
           preserve-external-values
           searchable
           :search-placeholder="field.placeholder"
@@ -109,7 +109,14 @@
           </div>
           <div class="qualification-drawer-metrics">
             <article class="metric-card blue"><Building2 :size="18" /><span>Contract Status</span><strong class="international-detail-status" :class="centerContractDisplay.className">{{ centerContractDisplay.label }}</strong></article>
-            <article class="metric-card cyan"><Layers3 :size="18" /><span>Product Lines</span><strong>{{ centerDetail.centerStat.productLineCount }}</strong></article>
+            <article class="metric-card cyan international-detail-product-line-card">
+              <Layers3 :size="18" />
+              <span>Product Lines</span>
+              <div v-if="centerDetail.centerStat.productLines.length" class="international-detail-product-line-list">
+                <b v-for="productLine in centerDetail.centerStat.productLines" :key="productLine">{{ productLine }}</b>
+              </div>
+              <strong v-else class="international-detail-product-line-empty">Not maintained</strong>
+            </article>
             <article class="metric-card green"><BookOpenCheck :size="18" /><span>Courses</span><strong>{{ centerDetail.centerStat.courseCount }}</strong></article>
           </div>
           <section class="international-center-info-grid"><div v-for="item in centerDetail.detailRows" :key="item.label" class="international-center-info-row"><span>{{ item.label }}</span><strong>{{ item.value }}</strong></div></section>
@@ -127,7 +134,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
 import { AlertTriangle, BookOpenCheck, Building2, Download, Eraser, Globe2, Layers3, ListOrdered, LoaderCircle, Maximize2, Minimize2, RotateCcw, Search, Upload, X } from 'lucide-vue-next';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import InternationalTrainingConstructionWorldMap from '../components/InternationalTrainingConstructionWorldMap.vue';
@@ -147,6 +154,10 @@ import {
 import { exportInternationalTrainingConstructionCenterRecords, exportInternationalTrainingConstructionDirtyRows, exportInternationalTrainingConstructionRecords } from '../utils/exportInternationalTrainingConstruction';
 import { parseInternationalTrainingConstructionFiles } from '../utils/internationalTrainingConstructionParser';
 import { normalizeInternationalTrainingConstructionRecords } from '../utils/internationalTrainingConstructionConfig';
+import {
+  buildRetainedInternationalTrainingConstructionDirtyRows,
+  mergeInternationalTrainingConstructionDirtyRows
+} from '../utils/internationalTrainingConstructionDataQuality';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
 const props = defineProps({ canExportExcel: { type: Boolean, default: true }, fullscreenActive: { type: Boolean, default: false }, active: { type: Boolean, default: true }, allowImport: { type: Boolean, default: true } });
@@ -199,6 +210,18 @@ watchEffect(() => {
   emit('status-change', loading.value ? 'International training center construction data is processing.' : hasData.value ? `International training construction map ready, ${dashboard.value.summary.totalCenters} centers in current result.` : 'International training center construction map is waiting for import.');
 });
 watch(() => props.fullscreenActive, (isFullscreen) => { if (!isFullscreen) fullscreenFiltersOpen.value = false; });
+watch(
+  () => filterFields.map((field) => [...(draftFilters[field.key] || [])]),
+  async (nextSelections, previousSelections) => {
+    const changedIndex = nextSelections.findIndex((values, index) =>
+      values.join('\u0000') !== (previousSelections?.[index] || []).join('\u0000')
+    );
+    if (changedIndex < 0) return;
+    await nextTick();
+    pruneInvalidDownstreamSelections(changedIndex);
+  },
+  { deep: true }
+);
 
 function openImporter() { if (!interactionDisabled.value) fileInputRef.value?.click(); }
 function toggleBrowserFullscreen() { emit(props.fullscreenActive ? 'exit-fullscreen' : 'enter-fullscreen'); }
@@ -214,8 +237,7 @@ async function handleFileImport(event) {
   importOverlay.visible = true;
   try {
     const result = await runWithMinimumVisibleTime(() => parseInternationalTrainingConstructionFiles(files, { onProgress: updateImportProgress }), 650);
-    records.value = normalizeInternationalTrainingConstructionRecords(result.records || []);
-    dirtyRows.value = result.dirtyRows || [];
+    hydrateDataset(result.records || [], result.dirtyRows || []);
     importWarnings.value = result.warnings || [];
     resetFiltersToAll();
     await saveToolDataset(LOCAL_DATASET_KEYS.INTERNATIONAL_TRAINING_CONSTRUCTION_MAP, { records: records.value, dirtyRows: dirtyRows.value, warnings: importWarnings.value, locationSummary: result.locationSummary || {}, importedAt: result.importedAt });
@@ -223,7 +245,7 @@ async function handleFileImport(event) {
     importOverlay.mode = 'success';
     importOverlay.progress = 100;
     importOverlay.message = `Imported ${dashboard.value.summary.totalCenters.toLocaleString('en-US')} training centers.`;
-    warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded because mandatory center, region, or country information was not recognized.` : importWarnings.value[0] || '';
+    warningMessage.value = buildDataQualityWarning();
     emit('log', `International training construction import completed: ${dashboard.value.summary.totalCenters} centers.`);
     closeTimer = setTimeout(closeImportOverlay, 800);
   } catch (error) {
@@ -243,7 +265,7 @@ function applyFilters() {
   if (missing.length) { warningMessage.value = `Please select: ${missing.join(', ')}. "All" is also a valid selection.`; return; }
   appliedFilters.value = cloneInternationalTrainingConstructionFilters(draftFilters);
   selectedCenter.value = '';
-  warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded during import.` : importWarnings.value[0] || '';
+  warningMessage.value = buildDataQualityWarning();
   emit('log', `International training construction filters applied: ${dashboard.value.summary.totalCenters} centers.`);
 }
 
@@ -251,7 +273,7 @@ function resetFilters() {
   if (!hasData.value) { warningMessage.value = 'Please import international training center construction data first.'; return; }
   resetFiltersToAll();
   selectedCenter.value = '';
-  warningMessage.value = dirtyRows.value.length ? `${dirtyRows.value.length.toLocaleString('en-US')} rows were excluded during import.` : importWarnings.value[0] || '';
+  warningMessage.value = buildDataQualityWarning();
 }
 
 function resetFiltersToAll() {
@@ -313,11 +335,45 @@ async function loadLastDataset() {
   try {
     const saved = await loadToolDataset(LOCAL_DATASET_KEYS.INTERNATIONAL_TRAINING_CONSTRUCTION_MAP);
     if (!saved?.payload?.records?.length) return;
-    records.value = normalizeInternationalTrainingConstructionRecords(saved.payload.records);
-    dirtyRows.value = saved.payload.dirtyRows || [];
+    hydrateDataset(saved.payload.records, saved.payload.dirtyRows || []);
     importWarnings.value = saved.payload.warnings || [];
     resetFiltersToAll();
+    warningMessage.value = buildDataQualityWarning();
   } catch (error) { console.warn('Unable to load international training construction dataset.', error); }
+}
+
+function hydrateDataset(sourceRecords, sourceDirtyRows) {
+  records.value = normalizeInternationalTrainingConstructionRecords(sourceRecords);
+  const retainedDirtyRows = buildRetainedInternationalTrainingConstructionDirtyRows(records.value);
+  dirtyRows.value = mergeInternationalTrainingConstructionDirtyRows(sourceDirtyRows, retainedDirtyRows);
+}
+
+/**
+ * Filter options cascade from left to right. A later selection never rewrites
+ * an earlier one; when a parent changes, only incompatible narrowed selections
+ * to its right are cleared. A true "All" selection remains stable.
+ */
+function pruneInvalidDownstreamSelections(changedIndex) {
+  for (let index = changedIndex + 1; index < filterFields.length; index += 1) {
+    const key = filterFields[index].key;
+    const selected = draftFilters[key] || [];
+    const base = allOptions.value[key] || [];
+    const isAll = base.length > 0 && base.every((value) => selected.includes(value));
+    if (isAll || !selected.length) continue;
+    const available = new Set(dynamicFilterOptions.value[key] || []);
+    const nextValues = selected.filter((value) => available.has(value));
+    if (nextValues.length !== selected.length) draftFilters[key] = nextValues;
+  }
+}
+
+function buildDataQualityWarning() {
+  if (!dirtyRows.value.length) return importWarnings.value[0] || '';
+  const retained = dirtyRows.value.filter((row) => String(row?.handling || '').startsWith('Retained')).length;
+  const excluded = dirtyRows.value.length - retained;
+  const parts = [];
+  if (excluded) parts.push(`${excluded.toLocaleString('en-US')} excluded`);
+  if (retained) parts.push(`${retained.toLocaleString('en-US')} retained with invalid filter values hidden`);
+  return `${dirtyRows.value.length.toLocaleString('en-US')} source rows require review: ${parts.join(', ')}. Export Dirty Data for full original rows and reasons.`;
 }
 
 function createImportOverlay() { return { visible: false, mode: 'progress', progress: 0, message: 'Preparing import...', errorTitle: '', errorMessage: '', steps: createImportSteps() }; }

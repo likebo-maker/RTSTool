@@ -68,7 +68,7 @@
       <div class="international-embedded-title">
         <p class="section-kicker">INTERNATIONAL SERVICE QUALIFICATION MAP</p>
         <h2>International Service Qualification Map</h2>
-        <span>Enabled accounts only. Excluded rows can be exported for review.</span>
+        <span>Enabled accounts only. Data-quality issues can be exported with handling details.</span>
       </div>
       <div class="qualification-header-actions">
         <input
@@ -212,7 +212,7 @@
       </div>
       <div v-if="dirtyRowCount && !warningMessage" class="qualification-warning-list">
         <AlertTriangle :size="16" />
-        <span>{{ dirtyRowCount.toLocaleString('en-US') }} rows were excluded. Export dirty rows to review the full original rows and reasons.</span>
+        <span>{{ dirtyRowCount.toLocaleString('en-US') }} data-quality issues were detected. Export dirty rows to review handling, affected fields, original rows, and reasons.</span>
       </div>
     </section>
 
@@ -691,11 +691,11 @@ async function handleFileImport(event) {
 
     importOverlay.mode = 'success';
     importOverlay.progress = 100;
-    importOverlay.message = `Imported ${datasetMeta.value.recordCount.toLocaleString('en-US')} valid rows. Excluded ${dirtyRowCount.value.toLocaleString('en-US')} rows.`;
+    importOverlay.message = `Imported ${datasetMeta.value.recordCount.toLocaleString('en-US')} qualification rows. Detected ${dirtyRowCount.value.toLocaleString('en-US')} data-quality issues.`;
     scheduleImportOverlayClose();
-    emit('log', `International qualification import completed: ${datasetMeta.value.recordCount} valid rows, ${dirtyRowCount.value} dirty rows.`);
+    emit('log', `International qualification import completed: ${datasetMeta.value.recordCount} qualification rows, ${dirtyRowCount.value} data-quality issues.`);
     if (dirtyRowCount.value) {
-      warningMessage.value = `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`;
+      warningMessage.value = `${dirtyRowCount.value.toLocaleString('en-US')} data-quality issues were detected. Export dirty rows to review handling and reasons.`;
     }
   } catch (error) {
     importOverlay.mode = 'error';
@@ -744,7 +744,7 @@ async function applyFilters() {
   await yieldToBrowser();
   try {
     warningMessage.value = dirtyRowCount.value
-      ? `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
+      ? `${dirtyRowCount.value.toLocaleString('en-US')} data-quality issues were detected. Export dirty rows to review handling and reasons.`
       : '';
     assignFilters(appliedFilters, draftFilters);
     countryDetail.value = createEmptyCountryDetail();
@@ -771,7 +771,7 @@ async function resetFilters() {
     countryDetail.value = createEmptyCountryDetail();
     await refreshDashboardFromBackend();
     warningMessage.value = dirtyRowCount.value
-      ? `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
+      ? `${dirtyRowCount.value.toLocaleString('en-US')} data-quality issues were detected. Export dirty rows to review handling and reasons.`
       : '';
   } finally {
     querying.value = false;
@@ -874,7 +874,7 @@ async function loadBackendDataset() {
     await refreshDashboardFromBackend();
     scheduleFilterOptionRefresh(0);
     warningMessage.value = dirtyRowCount.value
-      ? `${dirtyRowCount.value.toLocaleString('en-US')} rows were excluded. Export dirty rows to review the reasons.`
+      ? `${dirtyRowCount.value.toLocaleString('en-US')} data-quality issues were detected. Export dirty rows to review handling and reasons.`
       : '';
   } catch (error) {
     // A first-time user has no local dataset yet, which is an expected state.

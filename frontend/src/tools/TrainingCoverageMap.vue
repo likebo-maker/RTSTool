@@ -147,6 +147,15 @@
       </div>
 
       <div class="training-filter-grid">
+        <TrainingDateRangeFilter
+          v-model:start-date="draftFilters.startDate"
+          v-model:end-date="draftFilters.endDate"
+          label="培训结算时间"
+          start-label="培训结算开始日期"
+          end-label="培训结算结束日期"
+          :minimum="filterOptions.dateBounds?.minimum"
+          :maximum="filterOptions.dateBounds?.maximum"
+        />
         <QualificationFilterSelect v-model="draftFilters.regions" label="大区" :options="dynamicFilterOptions.regions" searchable search-placeholder="搜索大区" />
         <QualificationFilterSelect v-model="draftFilters.productLines" label="产线" :options="dynamicFilterOptions.productLines" searchable search-placeholder="搜索产线" />
         <QualificationFilterSelect v-model="draftFilters.trainingCenters" label="培训中心" :options="dynamicFilterOptions.trainingCenters" searchable search-placeholder="搜索培训中心" />
@@ -556,6 +565,7 @@ import BlockingOperationModal from '../components/BlockingOperationModal.vue';
 import EChartPanel from '../components/EChartPanel.vue';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import QualificationImportOverlay from '../components/QualificationImportOverlay.vue';
+import TrainingDateRangeFilter from '../components/TrainingDateRangeFilter.vue';
 import TrainingCoverageAmap from '../components/TrainingCoverageAmap.vue';
 import { LOCAL_DATASET_KEYS, loadToolDataset, saveToolDataset } from '../services/localDataStore';
 import { normalizeGeoMap } from '../services/geoCacheService';
@@ -572,6 +582,7 @@ import {
 import { exportBranchTrainingRecords, exportTrainingDirtyRecords, exportTrainingRecords } from '../utils/exportTrainingExcel';
 import { parseTrainingFiles } from '../utils/trainingParser';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
+import { validateTrainingSettlementDateRange } from '../utils/trainingSettlementDate';
 
 const props = defineProps({
   canExportExcel: {
@@ -600,7 +611,7 @@ const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-full
 
 const TOP_LIST_LIMIT = 10;
 const CHART_TOP_LIMIT = 10;
-const DELIVERY_DATASET_VERSION = 'training-delivery-v2';
+const DELIVERY_DATASET_VERSION = 'training-delivery-v3';
 const MAP_CAROUSEL_INTERVAL_MS = 5000;
 const SIDE_ITEM_INTERVAL_MS = 4000;
 const AUTO_RESUME_DELAY_MS = 30000;
@@ -1302,6 +1313,15 @@ function cloneFilters(filters) {
 function validateDraftFilters() {
   if (!hasData.value) {
     importWarnings.value = [constructionReady.value ? '请先导入培训中心交付数据后再查询。' : '请先导入中国区培训中心建设地图数据。'];
+    return false;
+  }
+  const dateValidation = validateTrainingSettlementDateRange(draftFilters);
+  if (!dateValidation.valid) {
+    importWarnings.value = [
+      dateValidation.reason === 'reversed'
+        ? '培训结算开始日期不能晚于结束日期。'
+        : '请完整选择培训结算开始日期和结束日期。'
+    ];
     return false;
   }
   const missingKey = TRAINING_DELIVERY_FILTER_KEYS.find((key) => !draftFilters[key]?.length);

@@ -25,13 +25,15 @@
         "Pakistan",
         "Papua New Guinea",
         "Philippines",
+        "Singapore",
         "Solomon Islands",
         "South Korea",
         "Sri Lanka",
         "Taiwan",
         "Thailand",
         "Vanuatu",
-        "Vietnam"
+        "Vietnam",
+        "Maldives"
       ]
     },
     {
@@ -90,6 +92,7 @@
         "Poland",
         "Portugal",
         "Romania",
+        "Serbia",
         "Slovakia",
         "Slovenia",
         "Spain",
@@ -146,6 +149,7 @@
         "Benin",
         "Bermuda",
         "Botswana",
+        "Bahrain",
         "Burkina Faso",
         "Burundi",
         "Cameroon",
@@ -176,12 +180,14 @@
         "Malawi",
         "Mali",
         "Mauritania",
+        "Mauritius",
         "Morocco",
         "Mozambique",
         "Namibia",
         "Niger",
         "Nigeria",
         "Oman",
+        "Palestine",
         "Qatar",
         "Republic of the Congo",
         "Rwanda",
@@ -2355,6 +2361,38 @@
     {
       "alias": "\u6d25\u5df4\u5e03\u97e6",
       "country": "Zimbabwe"
+    },
+    {
+      "alias": "Utd.Arab Emir.",
+      "country": "United Arab Emirates"
+    },
+    {
+      "alias": "Cote d'Ivoire",
+      "country": "Ivory Coast"
+    },
+    {
+      "alias": "Dem. Rep. Congo",
+      "country": "Democratic Republic of the Congo"
+    },
+    {
+      "alias": "Trinidad Tobago",
+      "country": "Trinidad and Tobago"
+    },
+    {
+      "alias": "Bosnia-Herz.",
+      "country": "Bosnia and Herzegovina"
+    },
+    {
+      "alias": "Brunei Daruss.",
+      "country": "Brunei"
+    },
+    {
+      "alias": "Rep.of Congo",
+      "country": "Republic of the Congo"
+    },
+    {
+      "alias": "Pap. New Guinea",
+      "country": "Papua New Guinea"
     }
   ],
   "capitalCoordinateSource": "country-capital-lat-long-population.csv + local business aliases",
@@ -3554,6 +3592,48 @@
       "coords": [
         28.2771,
         -15.4134
+      ]
+    },
+    "Serbia": {
+      "capital": "Belgrade",
+      "coords": [
+        20.4489,
+        44.7866
+      ]
+    },
+    "Singapore": {
+      "capital": "Singapore",
+      "coords": [
+        103.8198,
+        1.3521
+      ]
+    },
+    "Palestine": {
+      "capital": "Ramallah",
+      "coords": [
+        35.2034,
+        31.9038
+      ]
+    },
+    "Bahrain": {
+      "capital": "Manama",
+      "coords": [
+        50.5861,
+        26.2285
+      ]
+    },
+    "Mauritius": {
+      "capital": "Port Louis",
+      "coords": [
+        57.4989,
+        -20.1609
+      ]
+    },
+    "Maldives": {
+      "capital": "Male",
+      "coords": [
+        73.5093,
+        4.1755
       ]
     },
     "Zimbabwe": {

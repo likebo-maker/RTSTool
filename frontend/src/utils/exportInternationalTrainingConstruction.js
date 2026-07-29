@@ -10,8 +10,14 @@ export function exportInternationalTrainingConstructionCenterRecords(centerName,
 }
 
 export function exportInternationalTrainingConstructionDirtyRows(dirtyRows, fileName = 'international_training_center_construction_dirty_rows.xlsx') {
-  const rows = (dirtyRows || []).map((row) => ({
+  writeWorkbook(buildInternationalTrainingConstructionDirtyExportRows(dirtyRows), 'Dirty Rows', fileName);
+}
+
+export function buildInternationalTrainingConstructionDirtyExportRows(dirtyRows) {
+  return (dirtyRows || []).map((row) => ({
     Category: row.category || '',
+    Handling: row.handling || '',
+    'Affected Fields': Array.isArray(row.affectedFields) ? row.affectedFields.join(', ') : row.affectedFields || '',
     Reason: row.reason || '',
     'Source File': row.sourceFile || '',
     'Source Sheet': row.sourceSheet || '',
@@ -20,7 +26,6 @@ export function exportInternationalTrainingConstructionDirtyRows(dirtyRows, file
       Object.entries(row.rawData || {}).map(([key, value]) => [`Original - ${key}`, value])
     )
   }));
-  writeWorkbook(rows, 'Dirty Rows', fileName);
 }
 
 function toExportRow(record) {

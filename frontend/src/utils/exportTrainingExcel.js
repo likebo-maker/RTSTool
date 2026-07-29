@@ -14,6 +14,7 @@ export function exportTrainingRecords(records, fileName = '中国区培训中心
     原始课程名称: record.sourceCourseName || '',
     所属方案: record.sourceCoursePlan || '',
     培训周期: record.trainingCycle,
+    培训结算时间: record.settlementDate || '',
     培训组织方: record.organizer,
     培训地点: record.trainingLocation,
     培训类型: record.trainingType,

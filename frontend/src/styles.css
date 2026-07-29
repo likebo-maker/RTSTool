@@ -2277,9 +2277,46 @@ tr:hover td {
 
 .training-filter-grid {
   display: grid;
-  grid-template-columns: minmax(150px, 0.82fr) minmax(140px, 0.72fr) minmax(220px, 1fr) minmax(260px, 1.2fr) max-content;
+  grid-template-columns: minmax(260px, 1.15fr) minmax(150px, 0.82fr) minmax(140px, 0.72fr) minmax(220px, 1fr) minmax(260px, 1.2fr) max-content;
   gap: 10px;
   align-items: end;
+}
+
+.training-date-range-filter {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.training-date-range-label {
+  color: #8db8dc;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.training-date-range-controls {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) auto minmax(112px, 1fr);
+  gap: 7px;
+  align-items: center;
+}
+
+.training-date-range-controls > span {
+  color: #6f96ba;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.training-date-range-controls input {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: var(--radius);
+  color: #e8f4ff;
+  color-scheme: dark;
+  background: rgba(5, 18, 36, 0.84);
 }
 
 .qualification-filter-select,
@@ -2932,7 +2969,7 @@ tr:hover td {
 }
 
 .fullscreen-workspace .training-filter-grid {
-  grid-template-columns: repeat(4, minmax(132px, 1fr)) max-content;
+  grid-template-columns: minmax(250px, 1.2fr) repeat(4, minmax(132px, 1fr)) max-content;
   gap: 8px;
 }
 
@@ -4730,6 +4767,18 @@ tr:hover td {
   font-size: 12px;
 }
 
+.global-merged-source-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.global-merged-source-copy small {
+  color: #8fb3d7;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .global-merged-source-dot {
   width: 8px;
   height: 8px;
@@ -5134,6 +5183,32 @@ tr:hover td {
   align-items: end;
 }
 
+.international-training-delivery-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.2fr) repeat(4, minmax(140px, 1fr)) max-content;
+  gap: 10px;
+  align-items: end;
+}
+
+.global-delivery-date-filter-panel {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.7fr) minmax(300px, 1fr) max-content;
+  gap: 14px;
+  align-items: end;
+  padding: 12px 16px;
+}
+
+.global-delivery-date-filter-panel h2 {
+  margin: 3px 0 0;
+  font-size: 17px;
+}
+
+.global-delivery-date-warning {
+  grid-column: 1 / -1;
+  color: #fbbf24;
+  font-size: 12px;
+}
+
 .international-construction-metric-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -5201,8 +5276,63 @@ tr:hover td {
   color: #a78bfa;
 }
 
+.international-detail-product-line-card {
+  min-height: 116px;
+}
+
+.international-detail-product-line-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.international-detail-product-line-list b {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid rgba(34, 211, 238, 0.38);
+  border-radius: 4px;
+  background: rgba(8, 145, 178, 0.14);
+  color: #67e8f9;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.international-detail-product-line-empty {
+  color: #94a3b8 !important;
+  font-size: 16px !important;
+  line-height: 1.25 !important;
+  white-space: normal;
+}
+
 .international-region-legend {
-  min-width: 188px;
+  min-width: 390px;
+}
+
+.international-delivery-region-row {
+  grid-template-columns: 12px minmax(120px, 1fr) auto;
+}
+
+.international-delivery-region-row strong {
+  color: #b9d4ee;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 1500px) {
+  .training-filter-grid,
+  .international-training-delivery-filter-grid {
+    grid-template-columns: minmax(230px, 1.2fr) repeat(2, minmax(150px, 1fr));
+  }
+
+  .training-filter-grid .qualification-filter-actions,
+  .international-training-delivery-filter-grid .qualification-filter-actions {
+    justify-content: flex-end;
+  }
 }
 
 .international-embedded-toolbar {
@@ -5463,6 +5593,7 @@ tr:hover td {
   .qualification-filter-grid,
   .construction-filter-grid,
   .international-training-construction-filter-grid,
+  .international-training-delivery-filter-grid,
   .qualification-metric-grid,
   .international-construction-metric-grid,
   .construction-metric-grid,
@@ -5569,8 +5700,19 @@ tr:hover td {
   .qualification-filter-grid,
   .training-filter-grid,
   .construction-filter-grid,
-  .international-training-construction-filter-grid {
+  .international-training-construction-filter-grid,
+  .international-training-delivery-filter-grid,
+  .global-delivery-date-filter-panel {
     grid-template-columns: 1fr;
+  }
+
+  .global-delivery-date-warning {
+    grid-column: 1;
+  }
+
+  .international-region-legend {
+    min-width: 0;
+    max-width: calc(100% - 28px);
   }
 
   .training-center-tab-button {
