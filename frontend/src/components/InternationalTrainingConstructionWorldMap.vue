@@ -21,15 +21,6 @@
         </div>
       </div>
 
-      <div class="training-region-legend international-region-legend">
-        <span class="qualification-map-legend-title">Secondary Region</span>
-        <div v-for="item in regionLegendItems" :key="item.name" class="training-region-legend-row" :class="{ muted: item.count === 0 }">
-          <span class="training-region-legend-dot" :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"></span>
-          <span class="training-region-legend-name">{{ item.name }}</span>
-          <strong>{{ item.count }}</strong>
-        </div>
-      </div>
-
       <div v-if="loading" class="qualification-map-overlay">
         <LoaderCircle class="spin" :size="24" />
         <span>Loading construction map...</span>
@@ -90,12 +81,6 @@ const countryRegionMap = computed(() => {
   regionGroups.value.forEach((region) => (region.countries || []).forEach((country) => map.set(country, region.name)));
   return map;
 });
-const regionLegendItems = computed(() => {
-  const counts = new Map(regionGroups.value.map((region) => [region.name, 0]));
-  props.points.forEach((point) => counts.set(point.secondaryRegion, (counts.get(point.secondaryRegion) || 0) + 1));
-  return regionGroups.value.map((region) => ({ name: region.name, color: region.color, count: counts.get(region.name) || 0 }));
-});
-
 onMounted(async () => {
   window.addEventListener('resize', handleResize);
   await nextTick();

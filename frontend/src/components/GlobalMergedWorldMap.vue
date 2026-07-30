@@ -37,12 +37,12 @@
         <div class="global-merged-source-legend">
           <span class="qualification-map-legend-title">{{ legendTitle }}</span>
           <div v-for="item in pointLegend" :key="item.key" class="global-merged-source-row">
-            <span class="global-merged-source-dot" :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"></span>
+            <span class="global-merged-source-dot" :style="legendDotStyle(item)"></span>
             <span class="global-merged-source-copy">
               <span>{{ item.name }}</span>
-              <small v-if="item.sessionCount != null">{{ formatNumber(item.sessionCount) }} sessions · {{ formatNumber(item.attendanceCount) }} attendance</small>
+              <small v-if="item.recordCount != null">{{ formatNumber(item.recordCount) }} records · {{ formatNumber(item.traineeCount) }} trainees</small>
             </span>
-            <strong v-if="item.sessionCount == null">{{ item.count }}</strong>
+            <strong v-if="item.recordCount == null">{{ item.count }}</strong>
           </div>
         </div>
 
@@ -63,8 +63,8 @@
       <aside class="global-merged-ranking-panel">
         <p class="section-kicker">RANKING AND ANALYSIS</p>
         <h3>{{ rankingTitle }}</h3>
-        <div v-if="rankedPoints.length" class="global-merged-ranking-list">
-          <button v-for="(point, index) in rankedPoints" :key="point.id" type="button" @click="selectPoint(point)">
+        <div v-if="displayedRankedPoints.length" class="global-merged-ranking-list" :class="{ expanded: rankingExpanded }">
+          <button v-for="(point, index) in displayedRankedPoints" :key="point.id" type="button" @click="selectPoint(point)">
             <span class="global-merged-rank-number">{{ index + 1 }}</span>
             <span class="global-merged-rank-copy">
               <strong :title="point.name">{{ point.name }}</strong>
@@ -77,6 +77,16 @@
           </button>
         </div>
         <div v-else class="chart-empty-state compact">No ranked locations yet.</div>
+        <button
+          v-if="rankedPoints.length > TOP_LIST_LIMIT"
+          class="qualification-expand-button global-merged-ranking-expand"
+          type="button"
+          @click="rankingExpanded = !rankingExpanded"
+        >
+          <ChevronUp v-if="rankingExpanded" :size="16" />
+          <ChevronDown v-else :size="16" />
+          <span>{{ rankingExpanded ? 'Collapse to TOP10' : `Show All ${rankedPoints.length}` }}</span>
+        </button>
       </aside>
     </div>
 
@@ -112,11 +122,13 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import * as echarts from 'echarts';
-import { LoaderCircle, MapPinned, Maximize2, Minimize2, X } from 'lucide-vue-next';
+import { ChevronDown, ChevronUp, LoaderCircle, MapPinned, Maximize2, Minimize2, X } from 'lucide-vue-next';
 import worldCountriesGeo from '../data/worldCountriesGeo.json';
 import { MAP_POINT_SYMBOL_SIZE } from '../utils/offlineChinaMap';
 import {
+  GLOBAL_DELIVERY_COMBINED_COLORS,
   buildGlobalPointLegend,
+  isChinaInternationalCombinedPoint,
   resolveGlobalPointColor,
   resolveGlobalPointSymbolSize
 } from '../utils/globalMergedMapVisuals';
@@ -140,15 +152,19 @@ const props = defineProps({
 const emit = defineEmits(['enter-fullscreen', 'exit-fullscreen']);
 
 const WORLD_MAP_NAME = 'global-merged-offline-world';
+const TOP_LIST_LIMIT = 10;
 const chartRef = ref(null);
 const selectedPoint = ref(null);
+const rankingExpanded = ref(false);
 const errorMessage = ref('');
 let chartInstance = null;
 let registered = false;
 
 const rankedPoints = computed(() => [...props.points]
-  .sort((left, right) => Number(right.value || 0) - Number(left.value || 0) || String(left.name).localeCompare(String(right.name), 'en'))
-  .slice(0, 10));
+  .sort((left, right) => Number(right.value || 0) - Number(left.value || 0) || String(left.name).localeCompare(String(right.name), 'en')));
+const displayedRankedPoints = computed(() => (
+  rankingExpanded.value ? rankedPoints.value : rankedPoints.value.slice(0, TOP_LIST_LIMIT)
+));
 
 const pointLegend = computed(() => (
   props.legendItems.length
@@ -168,7 +184,10 @@ onBeforeUnmount(() => {
   chartInstance = null;
 });
 
-watch(() => props.points, renderChart, { deep: true });
+watch(() => props.points, () => {
+  if (props.points.length <= TOP_LIST_LIMIT) rankingExpanded.value = false;
+  renderChart();
+}, { deep: true });
 watch(() => props.loading, renderChart);
 watch(() => props.active, async (active) => {
   if (!active) return;
@@ -208,6 +227,18 @@ function renderChart() {
       value: [Number(point.coords[0]), Number(point.coords[1]), Number(point.value || 0)],
       itemStyle: pointStyle(point)
     }));
+  const combinedRingData = data
+    .filter((point) => isChinaInternationalCombinedPoint(point))
+    .map((point) => ({
+      ...point,
+      itemStyle: {
+        color: 'rgba(167, 139, 250, 0.12)',
+        borderColor: GLOBAL_DELIVERY_COMBINED_COLORS.ring,
+        borderWidth: 3,
+        shadowBlur: 18,
+        shadowColor: GLOBAL_DELIVERY_COMBINED_COLORS.ring
+      }
+    }));
 
   chartInstance.setOption({
     animationDurationUpdate: 280,
@@ -242,6 +273,18 @@ function renderChart() {
     },
     series: [
       {
+        name: 'Combined China + International',
+        type: 'scatter',
+        coordinateSystem: 'geo',
+        zlevel: 3,
+        data: combinedRingData,
+        symbol: 'circle',
+        symbolSize: (value, params) =>
+          resolveGlobalPointSymbolSize(params.data, MAP_POINT_SYMBOL_SIZE.normal) + 10,
+        silent: true,
+        animation: false
+      },
+      {
         name: 'Global Locations',
         type: 'effectScatter',
         coordinateSystem: 'geo',
@@ -269,6 +312,20 @@ function pointStyle(point) {
     borderWidth: 1.2,
     shadowBlur: 15,
     shadowColor: color
+  };
+}
+
+function legendDotStyle(item) {
+  const colors = Array.isArray(item.colors) ? item.colors.filter(Boolean) : [];
+  if (colors.length >= 2) {
+    return {
+      background: `conic-gradient(${colors[0]} 0 50%, ${colors[1]} 50% 100%)`,
+      boxShadow: `0 0 7px ${colors[0]}, 0 0 12px ${colors[1]}`
+    };
+  }
+  return {
+    background: item.color,
+    boxShadow: `0 0 10px ${item.color}`
   };
 }
 

@@ -1,8 +1,13 @@
 import { applyPointOffsets } from '../services/geoCacheService';
 import {
-  filterTrainingRecordsBySettlementDate,
-  resolveTrainingSettlementDateBounds
-} from './trainingSettlementDate';
+  filterTrainingRecordsByTime,
+  resolveTrainingTimeBounds
+} from './trainingTime';
+import { buildTrainingDeliveryRegionStats } from './trainingDeliverySummary';
+import {
+  matchesInternationalDeliveryRegion,
+  visibleInternationalDeliveryRegions
+} from './internationalTrainingDeliveryScope';
 
 export const DEFAULT_INTERNATIONAL_TRAINING_DELIVERY_FILTERS = {
   startDate: '',
@@ -22,8 +27,16 @@ export const INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS = [
 
 export function collectInternationalTrainingDeliveryOptions(records) {
   return {
-    dateBounds: resolveTrainingSettlementDateBounds(records),
-    ...Object.fromEntries(INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.map(({ key, recordField }) => [key, sortTextValues(uniqueValues((records || []).map((record) => record[recordField])))]))
+    dateBounds: resolveTrainingTimeBounds(records),
+    ...Object.fromEntries(INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.map(({ key, recordField }) => {
+      const values = uniqueValues((records || []).map((record) => record[recordField]));
+      return [
+        key,
+        sortTextValues(key === 'secondaryRegions'
+          ? visibleInternationalDeliveryRegions(values)
+          : values)
+      ];
+    }))
   };
 }
 
@@ -31,7 +44,7 @@ export function buildInternationalTrainingDeliveryDynamicOptions(records, filter
   const allOptions = fallbackOptions || collectInternationalTrainingDeliveryOptions(records);
   const selectedSets = Object.fromEntries(INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.map(({ key }) => [key, buildEffectiveSelection(filters?.[key] || [], allOptions[key] || [])]));
   const buckets = Object.fromEntries(INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.map(({ key }) => [key, new Set()]));
-  const dateScopedRecords = filterTrainingRecordsBySettlementDate(records, filters);
+  const dateScopedRecords = filterTrainingRecordsByTime(records, filters);
   dateScopedRecords.forEach((record) => {
     INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.forEach((targetField) => {
       const matchesOtherFilters = INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.every((field) => field.key === targetField.key || !selectedSets[field.key].size || selectedSets[field.key].has(record[field.recordField]));
@@ -42,8 +55,16 @@ export function buildInternationalTrainingDeliveryDynamicOptions(records, filter
 }
 
 export function applyInternationalTrainingDeliveryFilters(records, filters = DEFAULT_INTERNATIONAL_TRAINING_DELIVERY_FILTERS) {
-  return filterTrainingRecordsBySettlementDate(records, filters).filter((record) => INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.every(({ key, recordField }) => {
+  const baseOptions = collectInternationalTrainingDeliveryOptions(records);
+  return filterTrainingRecordsByTime(records, filters).filter((record) => INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.every(({ key, recordField }) => {
     const selected = filters?.[key];
+    if (key === 'secondaryRegions') {
+      return matchesInternationalDeliveryRegion(
+        record[recordField],
+        selected,
+        baseOptions.secondaryRegions
+      );
+    }
     return Array.isArray(selected) && selected.length > 0 && selected.includes(record[recordField]);
   }));
 }
@@ -73,7 +94,10 @@ export function buildInternationalTrainingDeliveryDashboard(records, filters = D
     productLineDistribution: aggregateRecords(filteredRecords, 'productLine'),
     courseDistribution: aggregateRecords(filteredRecords, 'courseName'),
     countryDistribution: aggregatePointStats(pointStats, 'country'),
-    regionStats: buildRegionStats(filteredRecords),
+    regionStats: buildTrainingDeliveryRegionStats(filteredRecords, {
+      regionField: 'secondaryRegion',
+      resolveTraineeKey
+    }),
     trendSeries: buildTrendSeries(filteredRecords)
   };
 }
@@ -105,14 +129,6 @@ export function cloneInternationalTrainingDeliveryFilters(filters) {
     endDate: filters?.endDate || '',
     ...Object.fromEntries(INTERNATIONAL_TRAINING_DELIVERY_FILTER_FIELDS.map(({ key }) => [key, [...(filters?.[key] || [])]]))
   };
-}
-
-function buildRegionStats(records) {
-  return Object.entries(groupBy(records, 'secondaryRegion')).map(([name, regionRecords]) => ({
-    name,
-    sessionCount: uniqueValues(regionRecords.map((record) => record.sessionKey)).length,
-    attendanceCount: regionRecords.length
-  }));
 }
 
 function buildPointStat(pointKey, records) {

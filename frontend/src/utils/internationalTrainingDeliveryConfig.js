@@ -8,7 +8,7 @@ import {
   resolveInternationalTrainingCountry,
   resolveInternationalTrainingRegion
 } from './internationalTrainingConstructionConfig';
-import { normalizeTrainingSettlementRecord } from './trainingSettlementDate';
+import { normalizeTrainingTimeRecord } from './trainingTime';
 
 export const UNMAPPED_PRODUCT_LINE = 'UNMAPPED PRODUCT LINE';
 
@@ -33,7 +33,7 @@ export function resolveInternationalTrainingDeliveryProductLine(value) {
 
 export function normalizeInternationalTrainingDeliveryRecord(record) {
   const trainingCenter = String(record?.trainingLocation || record?.organizer || '').trim();
-  return normalizeTrainingSettlementRecord({
+  return normalizeTrainingTimeRecord({
     ...record,
     // Training Location is the delivery center name. Preserve the old source
     // organizer separately for traceability, but never use it to split map dots.

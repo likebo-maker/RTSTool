@@ -141,12 +141,12 @@
     >
       <div>
         <p class="section-kicker">FILTER CONTROLS</p>
-        <h2>Settlement Date</h2>
+        <h2>Time</h2>
       </div>
       <TrainingDateRangeFilter
         v-model:start-date="globalDeliveryDraftFilters.startDate"
         v-model:end-date="globalDeliveryDraftFilters.endDate"
-        label="Settlement Date"
+        label="Time"
         :minimum="globalDeliveryDateBounds.minimum"
         :maximum="globalDeliveryDateBounds.maximum"
       />
@@ -237,12 +237,12 @@ import TrainingDateRangeFilter from '../components/TrainingDateRangeFilter.vue';
 import { LOCAL_DATASET_KEYS, loadToolDataset } from '../services/localDataStore';
 import { buildGlobalConstructionSnapshot, buildGlobalDeliverySnapshot } from '../utils/globalMergedMap';
 import {
-  createTrainingSettlementDateRange,
-  filterTrainingRecordsBySettlementDate,
-  normalizeTrainingSettlementRecords,
-  resolveTrainingSettlementDateBounds,
-  validateTrainingSettlementDateRange
-} from '../utils/trainingSettlementDate';
+  createTrainingTimeRange,
+  filterTrainingRecordsByTime,
+  normalizeTrainingTimeRecords,
+  resolveTrainingTimeBounds,
+  validateTrainingTimeRange
+} from '../utils/trainingTime';
 import { normalizeInternationalTrainingDeliveryRecords } from '../utils/internationalTrainingDeliveryConfig';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
 
@@ -293,16 +293,16 @@ const chinaDeliveryRecords = ref([]);
 const internationalDeliveryRecords = ref([]);
 const globalDeliveryFiltering = ref(false);
 const globalDeliveryFilterWarning = ref('');
-const globalDeliveryDraftFilters = reactive(createTrainingSettlementDateRange());
-const globalDeliveryAppliedFilters = ref(createTrainingSettlementDateRange());
-const globalDeliveryDateBounds = computed(() => resolveTrainingSettlementDateBounds([
+const globalDeliveryDraftFilters = reactive(createTrainingTimeRange());
+const globalDeliveryAppliedFilters = ref(createTrainingTimeRange());
+const globalDeliveryDateBounds = computed(() => resolveTrainingTimeBounds([
   ...chinaDeliveryRecords.value,
   ...internationalDeliveryRecords.value
 ]));
 const globalDeliveryDateSourceWarning = computed(() => {
   const recordCount = chinaDeliveryRecords.value.length + internationalDeliveryRecords.value.length;
   if (!recordCount || globalDeliveryDateBounds.value.minimum) return '';
-  return 'The latest delivery datasets do not include the Settlement Date column. Re-import workbooks containing this column to use the date filter.';
+  return 'The latest delivery datasets do not include Training End Time. Re-import the delivery workbooks to use Time.';
 });
 
 const constructionDataSources = computed(() => [
@@ -442,7 +442,7 @@ async function refreshTrainingDataSources() {
       chinaConstruction?.payload?.records || [],
       internationalConstruction?.payload?.records || []
     );
-    chinaDeliveryRecords.value = normalizeTrainingSettlementRecords(chinaDelivery?.payload?.records || []);
+    chinaDeliveryRecords.value = normalizeTrainingTimeRecords(chinaDelivery?.payload?.records || []);
     internationalDeliveryRecords.value = normalizeInternationalTrainingDeliveryRecords(internationalDelivery?.payload?.records || []);
     setGlobalDeliveryDateFilterToAll();
     refreshGlobalDeliverySnapshot();
@@ -453,11 +453,11 @@ async function refreshTrainingDataSources() {
 }
 
 async function applyGlobalDeliveryDateFilter() {
-  const validation = validateTrainingSettlementDateRange(globalDeliveryDraftFilters);
+  const validation = validateTrainingTimeRange(globalDeliveryDraftFilters);
   if (!validation.valid) {
     globalDeliveryFilterWarning.value = validation.reason === 'reversed'
-      ? 'Settlement Date From cannot be later than Settlement Date To.'
-      : 'Select both Settlement Date From and Settlement Date To.';
+      ? 'Time From cannot be later than Time To.'
+      : 'Select both Time From and Time To.';
     return;
   }
   globalDeliveryFiltering.value = true;
@@ -494,15 +494,15 @@ async function resetGlobalDeliveryDateFilter() {
 }
 
 function setGlobalDeliveryDateFilterToAll() {
-  const all = createTrainingSettlementDateRange(globalDeliveryDateBounds.value);
+  const all = createTrainingTimeRange(globalDeliveryDateBounds.value);
   Object.assign(globalDeliveryDraftFilters, all);
   globalDeliveryAppliedFilters.value = { ...all };
 }
 
 function refreshGlobalDeliverySnapshot() {
   globalDeliverySnapshot.value = buildGlobalDeliverySnapshot(
-    filterTrainingRecordsBySettlementDate(chinaDeliveryRecords.value, globalDeliveryAppliedFilters.value),
-    filterTrainingRecordsBySettlementDate(internationalDeliveryRecords.value, globalDeliveryAppliedFilters.value)
+    filterTrainingRecordsByTime(chinaDeliveryRecords.value, globalDeliveryAppliedFilters.value),
+    filterTrainingRecordsByTime(internationalDeliveryRecords.value, globalDeliveryAppliedFilters.value)
   );
 }
 

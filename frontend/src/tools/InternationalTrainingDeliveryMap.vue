@@ -34,7 +34,7 @@
         <TrainingDateRangeFilter
           v-model:start-date="draftFilters.startDate"
           v-model:end-date="draftFilters.endDate"
-          label="Settlement Date"
+          label="Time"
           :minimum="allOptions.dateBounds?.minimum"
           :maximum="allOptions.dateBounds?.maximum"
         />
@@ -57,13 +57,64 @@
       <aside class="qualification-side-panel"><section class="glass-panel qualification-side-tabs">
         <div class="qualification-side-tabs-head"><div><p class="section-kicker">RANKING AND ANALYSIS</p><h2>Ranking & Analysis</h2></div><div class="qualification-tab-nav"><button v-for="tab in sideTabs" :key="tab.key" class="qualification-tab-button" :class="{ active: activeSideTab === tab.key }" type="button" @click="activeSideTab = tab.key">{{ tab.label }}</button></div></div>
         <div class="qualification-tab-body">
-          <div v-if="activeSideTab === 'delivery'" class="qualification-tab-panel"><div class="qualification-tab-caption"><span>Training Delivery TOP10</span><strong>{{ dashboard.topPoints.length }}</strong></div><div v-if="dashboard.topPoints.length" class="qualification-rank-list scrollable"><button v-for="(item, index) in dashboard.topPoints.slice(0, 10)" :key="item.pointKey" class="qualification-rank-row international-center-rank-row" :class="{ focused: selectedPoint === item.pointKey }" type="button" @click="openPointDetail(item.pointKey)"><span class="rank-index">{{ index + 1 }}</span><span class="rank-branch">{{ item.organizer }}</span><strong>{{ formatNumber(item.recordCount) }}</strong></button></div><div v-else class="chart-empty-state compact in-tab"><ListOrdered :size="20" /><span>{{ emptyStateText }}</span></div></div>
-          <div v-else-if="activeSideTab === 'failRate'" class="qualification-tab-panel"><div class="qualification-tab-caption"><span>Fail Rate TOP10</span><strong>{{ dashboard.failRatePoints.length }}</strong></div><div v-if="dashboard.failRatePoints.length" class="qualification-rank-list scrollable"><button v-for="(item, index) in dashboard.failRatePoints.slice(0, 10)" :key="item.pointKey" class="qualification-risk-row" type="button" @click="openPointDetail(item.pointKey)"><span class="rank-index">{{ index + 1 }}</span><span class="rank-branch">{{ item.organizer }}</span><strong>{{ item.failRate }}</strong></button></div><div v-else class="chart-empty-state compact in-tab"><ShieldAlert :size="20" /><span>{{ emptyStateText }}</span></div></div>
-          <div v-else-if="activeSideTab === 'failCount'" class="qualification-tab-panel"><div class="qualification-tab-caption"><span>Failed Trainees TOP10</span><strong>{{ dashboard.failCountPoints.length }}</strong></div><div v-if="dashboard.failCountPoints.length" class="qualification-rank-list scrollable"><button v-for="(item, index) in dashboard.failCountPoints.slice(0, 10)" :key="item.pointKey" class="qualification-risk-row" type="button" @click="openPointDetail(item.pointKey)"><span class="rank-index">{{ index + 1 }}</span><span class="rank-branch">{{ item.organizer }}</span><strong>{{ formatNumber(item.failPersonCount) }}</strong></button></div><div v-else class="chart-empty-state compact in-tab"><ShieldAlert :size="20" /><span>{{ emptyStateText }}</span></div></div>
-          <div v-else-if="activeSideTab === 'product'" class="qualification-tab-panel analysis single"><EChartPanel title="Product Line Distribution" kicker="PRODUCT LINE" :option="productLineBarOption" :active="active" height="300px" empty-text="No product line data." panelless /></div>
-          <div v-else class="qualification-tab-panel analysis single"><EChartPanel title="Course Distribution" kicker="COURSE" :option="courseBarOption" :active="active" height="300px" empty-text="No course data." panelless /></div>
+          <div v-if="activeSideTab === 'delivery'" class="qualification-tab-panel">
+            <div class="qualification-tab-caption"><span>Training Delivery TOP10</span><strong>{{ dashboard.topPoints.length }}</strong></div>
+            <div v-if="dashboard.topPoints.length" class="qualification-expandable-block">
+              <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.delivery }">
+                <button v-for="(item, index) in displayedTopPoints" :key="item.pointKey" class="qualification-rank-row international-center-rank-row" :class="{ focused: selectedPoint === item.pointKey }" type="button" @click="openPointDetail(item.pointKey)"><span class="rank-index">{{ index + 1 }}</span><span class="rank-branch">{{ item.organizer }}</span><strong>{{ formatNumber(item.recordCount) }}</strong></button>
+              </div>
+              <ExpandButton v-if="dashboard.topPoints.length > TOP_LIST_LIMIT" :expanded="expandedSidePanels.delivery" :count="dashboard.topPoints.length" @toggle="toggleSidePanel('delivery')" />
+            </div>
+            <div v-else class="chart-empty-state compact in-tab"><ListOrdered :size="20" /><span>{{ emptyStateText }}</span></div>
+          </div>
+          <div v-else-if="activeSideTab === 'failRate'" class="qualification-tab-panel">
+            <div class="qualification-tab-caption"><span>Fail Rate TOP10</span><strong>{{ dashboard.failRatePoints.length }}</strong></div>
+            <div v-if="dashboard.failRatePoints.length" class="qualification-expandable-block">
+              <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.failRate }">
+                <button v-for="(item, index) in displayedFailRatePoints" :key="item.pointKey" class="qualification-risk-row" type="button" @click="openPointDetail(item.pointKey)"><span class="rank-index">{{ index + 1 }}</span><span class="rank-branch">{{ item.organizer }}</span><strong>{{ item.failRate }}</strong></button>
+              </div>
+              <ExpandButton v-if="dashboard.failRatePoints.length > TOP_LIST_LIMIT" :expanded="expandedSidePanels.failRate" :count="dashboard.failRatePoints.length" @toggle="toggleSidePanel('failRate')" />
+            </div>
+            <div v-else class="chart-empty-state compact in-tab"><ShieldAlert :size="20" /><span>{{ emptyStateText }}</span></div>
+          </div>
+          <div v-else-if="activeSideTab === 'failCount'" class="qualification-tab-panel">
+            <div class="qualification-tab-caption"><span>Failed Trainees TOP10</span><strong>{{ dashboard.failCountPoints.length }}</strong></div>
+            <div v-if="dashboard.failCountPoints.length" class="qualification-expandable-block">
+              <div class="qualification-rank-list scrollable" :class="{ expanded: expandedSidePanels.failCount }">
+                <button v-for="(item, index) in displayedFailCountPoints" :key="item.pointKey" class="qualification-risk-row" type="button" @click="openPointDetail(item.pointKey)"><span class="rank-index">{{ index + 1 }}</span><span class="rank-branch">{{ item.organizer }}</span><strong>{{ formatNumber(item.failPersonCount) }}</strong></button>
+              </div>
+              <ExpandButton v-if="dashboard.failCountPoints.length > TOP_LIST_LIMIT" :expanded="expandedSidePanels.failCount" :count="dashboard.failCountPoints.length" @toggle="toggleSidePanel('failCount')" />
+            </div>
+            <div v-else class="chart-empty-state compact in-tab"><ShieldAlert :size="20" /><span>{{ emptyStateText }}</span></div>
+          </div>
+          <div v-else-if="activeSideTab === 'product'" class="qualification-tab-panel">
+            <DistributionList title="Product Line Distribution" :rows="displayedProductLines" :expanded="expandedSidePanels.product" />
+            <ExpandButton v-if="dashboard.productLineDistribution.length > TOP_LIST_LIMIT" :expanded="expandedSidePanels.product" :count="dashboard.productLineDistribution.length" @toggle="toggleSidePanel('product')" />
+          </div>
+          <div v-else class="qualification-tab-panel">
+            <DistributionList title="Course Distribution" :rows="displayedCourses" :expanded="expandedSidePanels.course" />
+            <ExpandButton v-if="dashboard.courseDistribution.length > TOP_LIST_LIMIT" :expanded="expandedSidePanels.course" :count="dashboard.courseDistribution.length" @toggle="toggleSidePanel('course')" />
+          </div>
         </div>
       </section></aside>
+    </section>
+
+    <section
+      v-if="!fullscreenActive"
+      class="glass-panel qualification-table-panel international-training-trend-panel"
+      :class="{ collapsed: !trendExpanded }"
+    >
+      <div class="panel-title-row">
+        <div><p class="section-kicker">TRAINING TREND</p><h2>Training Trend Analysis</h2></div>
+        <button class="ghost-button compact" type="button" @click="trendExpanded = !trendExpanded">
+          <span>{{ trendExpanded ? 'Collapse Trend Analysis' : 'Expand Trend Analysis' }}</span>
+        </button>
+      </div>
+      <div v-if="!trendExpanded" class="qualification-collapsed-summary">
+        <span>Training trend is collapsed to keep the map workspace compact.</span>
+        <strong>{{ dashboard.trendSeries.length }} periods</strong>
+      </div>
+      <EChartPanel v-else title="Training Trend Analysis" kicker="TRAINING TREND" :option="trendOption" :active="active" height="320px" empty-text="No training trend data." panelless :show-header="false" />
     </section>
 
     <Teleport to="body"><div v-if="pointDetail.pointStat" class="qualification-drawer-backdrop" @click.self="closePointDetail"><aside class="qualification-drawer international-construction-detail-drawer">
@@ -79,8 +130,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
-import { AlertTriangle, Award, BookOpenCheck, CircleX, Download, Eraser, ListOrdered, LoaderCircle, Maximize2, Minimize2, Presentation, RotateCcw, Search, ShieldAlert, Upload, Users, X } from 'lucide-vue-next';
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue';
+import { AlertTriangle, Award, BookOpenCheck, ChevronDown, ChevronUp, CircleX, Download, Eraser, ListOrdered, LoaderCircle, Maximize2, Minimize2, Presentation, RotateCcw, Search, ShieldAlert, Upload, Users, X } from 'lucide-vue-next';
 import QualificationFilterSelect from '../components/QualificationFilterSelect.vue';
 import TrainingDateRangeFilter from '../components/TrainingDateRangeFilter.vue';
 import InternationalTrainingDeliveryWorldMap from '../components/InternationalTrainingDeliveryWorldMap.vue';
@@ -93,10 +144,11 @@ import { exportInternationalTrainingDeliveryDirtyRows, exportInternationalTraini
 import { parseInternationalTrainingDeliveryFiles } from '../utils/internationalTrainingDeliveryParser';
 import { normalizeInternationalTrainingDeliveryRecords } from '../utils/internationalTrainingDeliveryConfig';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
-import { validateTrainingSettlementDateRange } from '../utils/trainingSettlementDate';
+import { validateTrainingTimeRange } from '../utils/trainingTime';
 
 const props = defineProps({ canExportExcel: { type: Boolean, default: true }, fullscreenActive: { type: Boolean, default: false }, active: { type: Boolean, default: true }, allowImport: { type: Boolean, default: true } });
 const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-fullscreen', 'exit-fullscreen', 'dataset-updated']);
+const TOP_LIST_LIMIT = 10;
 const filterFields = [{ key: 'secondaryRegions', label: 'Secondary Region', placeholder: 'Search secondary region' }, { key: 'countries', label: 'Country', placeholder: 'Search country' }, { key: 'productLines', label: 'Product Line', placeholder: 'Search product line' }, { key: 'courses', label: 'Course', placeholder: 'Search course' }];
 const sideTabs = [{ key: 'delivery', label: 'Delivery TOP10' }, { key: 'failRate', label: 'Fail Rate TOP10' }, { key: 'failCount', label: 'Failed Trainees TOP10' }, { key: 'product', label: 'Product Line' }, { key: 'course', label: 'Course' }];
 const fileInputRef = ref(null);
@@ -111,6 +163,14 @@ const activeSideTab = ref('delivery');
 const displayMode = ref('training-count');
 const fullscreenFiltersOpen = ref(false);
 const warningMessage = ref('');
+const trendExpanded = ref(false);
+const expandedSidePanels = reactive({
+  delivery: false,
+  failRate: false,
+  failCount: false,
+  product: false,
+  course: false
+});
 const draftFilters = reactive(cloneInternationalTrainingDeliveryFilters(DEFAULT_INTERNATIONAL_TRAINING_DELIVERY_FILTERS));
 const appliedFilters = ref(cloneInternationalTrainingDeliveryFilters(DEFAULT_INTERNATIONAL_TRAINING_DELIVERY_FILTERS));
 const importOverlay = reactive(createImportOverlay());
@@ -142,11 +202,68 @@ const pointMetricCards = computed(() => {
     { key: 'failed', label: 'Failed Records', value: formatNumber(stat.failCount), icon: CircleX, tone: 'red' }
   ];
 });
-const productLineBarOption = computed(() => buildBarOption(dashboard.value.productLineDistribution, 'Training Records'));
-const courseBarOption = computed(() => buildBarOption(dashboard.value.courseDistribution, 'Training Records'));
+const displayedTopPoints = computed(() => visibleRows(dashboard.value.topPoints, expandedSidePanels.delivery));
+const displayedFailRatePoints = computed(() => visibleRows(dashboard.value.failRatePoints, expandedSidePanels.failRate));
+const displayedFailCountPoints = computed(() => visibleRows(dashboard.value.failCountPoints, expandedSidePanels.failCount));
+const displayedProductLines = computed(() => visibleRows(dashboard.value.productLineDistribution, expandedSidePanels.product));
+const displayedCourses = computed(() => visibleRows(dashboard.value.courseDistribution, expandedSidePanels.course));
 const pointProductBarOption = computed(() => buildBarOption(pointDetail.value.productLineDistribution, 'Training Records'));
 const pointCourseBarOption = computed(() => buildBarOption(pointDetail.value.courseDistribution, 'Training Records'));
 const pointTrendOption = computed(() => buildTrendOption(pointDetail.value.trendSeries));
+const trendOption = computed(() => buildTrendOption(dashboard.value.trendSeries));
+
+const ExpandButton = defineComponent({
+  name: 'InternationalDeliveryExpandButton',
+  props: {
+    expanded: { type: Boolean, default: false },
+    count: { type: Number, default: 0 }
+  },
+  emits: ['toggle'],
+  setup(expandProps, { emit: expandEmit }) {
+    return () => h('button', {
+      class: 'qualification-expand-button',
+      type: 'button',
+      onClick: () => expandEmit('toggle')
+    }, [
+      h(expandProps.expanded ? ChevronUp : ChevronDown, { size: 16 }),
+      h('span', expandProps.expanded ? 'Collapse to TOP10' : `Show All ${expandProps.count}`)
+    ]);
+  }
+});
+
+const DistributionList = defineComponent({
+  name: 'InternationalDeliveryDistributionList',
+  props: {
+    title: { type: String, required: true },
+    rows: { type: Array, default: () => [] },
+    expanded: { type: Boolean, default: false }
+  },
+  setup(distributionProps) {
+    return () => {
+      const maximum = Math.max(...distributionProps.rows.map((item) => Number(item.value || 0)), 1);
+      return h('section', {
+        class: ['international-distribution-panel', { expanded: distributionProps.expanded }]
+      }, [
+        h('div', { class: 'international-distribution-head' }, [
+          h('p', { class: 'section-kicker' }, distributionProps.title.startsWith('Course') ? 'COURSE' : 'PRODUCT LINE'),
+          h('h3', distributionProps.title)
+        ]),
+        distributionProps.rows.length
+          ? h('div', { class: 'international-distribution-list' }, distributionProps.rows.map((item) => h('div', {
+            key: item.name,
+            class: 'international-distribution-row'
+          }, [
+            h('span', { title: item.name }, item.name),
+            h('div', { class: 'international-distribution-bar' }, [
+              h('i', { style: { width: `${Math.max(5, (Number(item.value || 0) / maximum) * 100)}%` } })
+            ]),
+            h('strong', Number(item.value || 0).toLocaleString('en-US'))
+          ])))
+          : h('div', { class: 'chart-empty-state compact in-tab' }, 'No distribution data.')
+      ]);
+    };
+  }
+});
 
 onMounted(loadLastDataset);
 onBeforeUnmount(() => clearTimeout(closeTimer));
@@ -200,11 +317,11 @@ async function handleFileImport(event) {
 
 async function applyFilters() {
   if (!hasData.value) { warningMessage.value = 'Please import international training delivery data first.'; return; }
-  const dateValidation = validateTrainingSettlementDateRange(draftFilters);
+  const dateValidation = validateTrainingTimeRange(draftFilters);
   if (!dateValidation.valid) {
     warningMessage.value = dateValidation.reason === 'reversed'
-      ? 'Settlement Date From cannot be later than Settlement Date To.'
-      : 'Select both Settlement Date From and Settlement Date To.';
+      ? 'Time From cannot be later than Time To.'
+      : 'Select both Time From and Time To.';
     return;
   }
   const missing = filterFields.filter((field) => !draftFilters[field.key]?.length).map((field) => field.label);
@@ -239,6 +356,14 @@ function resetFiltersToAll() {
   const all = createAllInternationalTrainingDeliveryFilters(allOptions.value);
   Object.assign(draftFilters, all);
   appliedFilters.value = cloneInternationalTrainingDeliveryFilters(all);
+}
+
+function visibleRows(rows, expanded) {
+  return expanded ? rows : rows.slice(0, TOP_LIST_LIMIT);
+}
+
+function toggleSidePanel(panelKey) {
+  expandedSidePanels[panelKey] = !expandedSidePanels[panelKey];
 }
 
 function openPointDetail(pointKey) { selectedPoint.value = pointKey; }
@@ -299,7 +424,7 @@ function emptyPointDetail() { return { pointStat: null, pointRecords: [], produc
 function formatNumber(value) { return Number(value || 0).toLocaleString('en-US'); }
 function resolveImportWarning() {
   if (records.value.length && !allOptions.value.dateBounds?.minimum) {
-    return 'The latest dataset does not include the Settlement Date column. Re-import a workbook containing this column to use the date filter.';
+    return 'The latest dataset does not include Training End Time. Re-import the delivery workbook to use Time.';
   }
   if (dirtyRows.value.length) {
     return `${dirtyRows.value.length.toLocaleString('en-US')} rows require review. Export Dirty Data to review the original data and reason.`;

@@ -26,6 +26,7 @@ import {
   createAllInternationalTrainingDeliveryFilters
 } from './internationalTrainingDeliveryAggregator';
 import { normalizeInternationalTrainingDeliveryRecords } from './internationalTrainingDeliveryConfig';
+import { buildTrainingDeliverySourceLegendItem } from './trainingDeliverySummary';
 import globalTrainingCenterAliases from '../data/globalTrainingCenterAliases.json';
 
 export function buildGlobalServiceSnapshot(chinaSource = [], internationalDashboard = null) {
@@ -191,9 +192,29 @@ export function buildGlobalDeliverySnapshot(chinaRecords = [], internationalReco
   const sessionCount = countGlobalSessions(chinaRecords, internationalRecords);
   const failCount = allRecords.filter((record) => record.isFail).length;
   const sourceLegendItems = [
-    buildDeliverySourceLegendItem('China', '#22d3ee', chinaRecords),
-    buildDeliverySourceLegendItem('International', '#a78bfa', internationalRecords)
+    buildTrainingDeliverySourceLegendItem(
+      'China',
+      '#22d3ee',
+      chinaRecords,
+      ['studentAccount', 'studentName', 'studentOrg']
+    ),
+    buildTrainingDeliverySourceLegendItem(
+      'International',
+      '#a78bfa',
+      internationalRecords,
+      ['learnerAccount', 'learnerName']
+    )
   ];
+  const combinedPointCount = points.filter((point) => point.markerComposition === 'china-international').length;
+  if (combinedPointCount) {
+    sourceLegendItems.push({
+      key: 'combined',
+      name: 'Combined China + International',
+      color: '#22d3ee',
+      colors: ['#22d3ee', '#a78bfa'],
+      count: combinedPointCount
+    });
+  }
 
   return {
     points,
@@ -431,8 +452,8 @@ function mergeDeliveryPoint(target, point) {
   sourceStat.sessionCount += Number(point.sessionCount || 0);
   current.sourceStats.set(point.source, sourceStat);
 
-  // China is the governed display source for explicitly merged Wuhan and
-  // Shenzhen points. It supplies the coordinate, location text, and cyan color.
+  // China is the governed coordinate source for explicitly merged Mindray
+  // centers. The renderer adds the International purple ring separately.
   if (alias && point.source === 'China') {
     current.country = point.country;
     current.region = point.region;
@@ -461,6 +482,8 @@ function finalizeDeliveryPoint(point) {
     ...point,
     source,
     sources,
+    markerColor: source === 'Combined' ? '#22d3ee' : point.markerColor,
+    markerComposition: source === 'Combined' ? 'china-international' : '',
     sourceBreakdown,
     value: point.recordCount,
     status: passRateValue === null ? 'No assessed result' : `${passRateValue.toFixed(1)}% pass rate`,
@@ -481,25 +504,6 @@ export function resolveGlobalDeliveryCenterAlias(point = {}) {
   return (globalTrainingCenterAliases.deliveryCenters || []).find((alias) => (
     (alias[sourceField] || []).some((candidate) => normalizeIdentity(candidate) === name)
   )) || null;
-}
-
-function buildDeliverySourceLegendItem(name, color, records) {
-  return {
-    key: name.toLowerCase(),
-    name,
-    color,
-    count: records.length,
-    sessionCount: countSourceSessions(records),
-    attendanceCount: records.length
-  };
-}
-
-function countSourceSessions(records) {
-  return new Set(
-    (records || [])
-      .map((record) => record.sessionKey || record.batchId)
-      .filter(Boolean)
-  ).size;
 }
 
 function qualificationPersonKey(record) {

@@ -1,11 +1,12 @@
-export const TRAINING_SETTLEMENT_DATE_FIELD = '培训结算时间';
+export const TRAINING_END_TIME_FIELDS = ['培训结束时间', '培训结束日期'];
 
 /**
- * Normalizes Excel date values to YYYY-MM-DD without applying a timezone shift.
+ * Normalizes the delivery report's training end time to YYYY-MM-DD without
+ * applying a timezone shift. Business users call this filter simply "Time".
  * Supported inputs include Date objects, Excel serial dates, YYYYMMDD values,
  * and common Chinese or slash-separated date strings.
  */
-export function normalizeTrainingSettlementDate(value) {
+export function normalizeTrainingTime(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return formatDateParts(value.getFullYear(), value.getMonth() + 1, value.getDate());
   }
@@ -33,21 +34,33 @@ export function normalizeTrainingSettlementDate(value) {
   return formatDateParts(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
 }
 
-export function normalizeTrainingSettlementRecord(record = {}) {
-  const sourceValue = record.settlementDate ?? record.rawData?.[TRAINING_SETTLEMENT_DATE_FIELD];
+/**
+ * Rehydrates both newly imported records and previously cached records.
+ * New data uses trainingTime. The legacy settlementDate field is last so an
+ * actual training end date always wins when both values are present.
+ */
+export function normalizeTrainingTimeRecord(record = {}) {
+  const sourceValue = firstMaintainedValue([
+    record.trainingTime,
+    record.endTime,
+    record.endDate,
+    record.rawData?.[TRAINING_END_TIME_FIELDS[0]],
+    record.rawData?.[TRAINING_END_TIME_FIELDS[1]],
+    record.settlementDate
+  ]);
   return {
     ...record,
-    settlementDate: normalizeTrainingSettlementDate(sourceValue)
+    trainingTime: normalizeTrainingTime(sourceValue)
   };
 }
 
-export function normalizeTrainingSettlementRecords(records = []) {
-  return (records || []).map(normalizeTrainingSettlementRecord);
+export function normalizeTrainingTimeRecords(records = []) {
+  return (records || []).map(normalizeTrainingTimeRecord);
 }
 
-export function resolveTrainingSettlementDateBounds(records = []) {
+export function resolveTrainingTimeBounds(records = []) {
   const dates = (records || [])
-    .map((record) => normalizeTrainingSettlementDate(record?.settlementDate ?? record?.rawData?.[TRAINING_SETTLEMENT_DATE_FIELD]))
+    .map((record) => normalizeTrainingTimeRecord(record).trainingTime)
     .filter(Boolean)
     .sort();
   return {
@@ -56,37 +69,39 @@ export function resolveTrainingSettlementDateBounds(records = []) {
   };
 }
 
-export function createTrainingSettlementDateRange(bounds = {}) {
+export function createTrainingTimeRange(bounds = {}) {
   return {
     startDate: bounds.minimum || '',
     endDate: bounds.maximum || ''
   };
 }
 
-export function isTrainingSettlementDateInRange(record, filters = {}) {
-  const startDate = normalizeTrainingSettlementDate(filters.startDate);
-  const endDate = normalizeTrainingSettlementDate(filters.endDate);
+export function isTrainingTimeInRange(record, filters = {}) {
+  const startDate = normalizeTrainingTime(filters.startDate);
+  const endDate = normalizeTrainingTime(filters.endDate);
   if (!startDate && !endDate) return true;
 
-  const settlementDate = normalizeTrainingSettlementDate(
-    record?.settlementDate ?? record?.rawData?.[TRAINING_SETTLEMENT_DATE_FIELD]
-  );
-  if (!settlementDate) return false;
-  if (startDate && settlementDate < startDate) return false;
-  if (endDate && settlementDate > endDate) return false;
+  const trainingTime = normalizeTrainingTimeRecord(record).trainingTime;
+  if (!trainingTime) return false;
+  if (startDate && trainingTime < startDate) return false;
+  if (endDate && trainingTime > endDate) return false;
   return true;
 }
 
-export function filterTrainingRecordsBySettlementDate(records = [], filters = {}) {
-  return (records || []).filter((record) => isTrainingSettlementDateInRange(record, filters));
+export function filterTrainingRecordsByTime(records = [], filters = {}) {
+  return (records || []).filter((record) => isTrainingTimeInRange(record, filters));
 }
 
-export function validateTrainingSettlementDateRange(filters = {}) {
-  const startDate = normalizeTrainingSettlementDate(filters.startDate);
-  const endDate = normalizeTrainingSettlementDate(filters.endDate);
+export function validateTrainingTimeRange(filters = {}) {
+  const startDate = normalizeTrainingTime(filters.startDate);
+  const endDate = normalizeTrainingTime(filters.endDate);
   if (!startDate || !endDate) return { valid: false, reason: 'missing' };
   if (startDate > endDate) return { valid: false, reason: 'reversed' };
   return { valid: true, startDate, endDate };
+}
+
+function firstMaintainedValue(values) {
+  return values.find((value) => value !== undefined && value !== null && String(value).trim()) ?? '';
 }
 
 function normalizeCompactDate(value) {

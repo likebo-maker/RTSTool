@@ -2277,7 +2277,7 @@ tr:hover td {
 
 .training-filter-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 1.15fr) minmax(150px, 0.82fr) minmax(140px, 0.72fr) minmax(220px, 1fr) minmax(260px, 1.2fr) max-content;
+  grid-template-columns: minmax(330px, 1.2fr) minmax(150px, 0.82fr) minmax(140px, 0.72fr) minmax(220px, 1fr) minmax(260px, 1.2fr) max-content;
   gap: 10px;
   align-items: end;
 }
@@ -2296,7 +2296,7 @@ tr:hover td {
 
 .training-date-range-controls {
   display: grid;
-  grid-template-columns: minmax(112px, 1fr) auto minmax(112px, 1fr);
+  grid-template-columns: minmax(146px, 1fr) auto minmax(146px, 1fr);
   gap: 7px;
   align-items: center;
 }
@@ -2307,16 +2307,180 @@ tr:hover td {
   text-transform: uppercase;
 }
 
-.training-date-range-controls input {
+.training-date-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.training-date-trigger {
+  display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 34px;
-  padding: 0 9px;
-  border: 1px solid rgba(96, 165, 250, 0.24);
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(96, 165, 250, 0.28);
   border-radius: var(--radius);
   color: #e8f4ff;
-  color-scheme: dark;
   background: rgba(5, 18, 36, 0.84);
+  cursor: pointer;
+}
+
+.training-date-trigger:hover,
+.training-date-picker.open .training-date-trigger {
+  border-color: rgba(34, 211, 238, 0.72);
+  background: rgba(8, 31, 56, 0.94);
+}
+
+.training-date-trigger span {
+  overflow: hidden;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.training-date-trigger .placeholder {
+  color: #8aa8c5;
+  font-weight: 600;
+}
+
+.training-date-trigger svg {
+  flex: 0 0 auto;
+  color: #67e8f9;
+}
+
+.training-calendar-popover {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 80;
+  display: grid;
+  gap: 10px;
+  width: 286px;
+  max-width: min(286px, calc(100vw - 40px));
+  padding: 12px;
+  border: 1px solid rgba(34, 211, 238, 0.44);
+  border-radius: var(--radius);
+  background: #07182d;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.42);
+}
+
+.training-calendar-popover.align-end {
+  right: 0;
+  left: auto;
+}
+
+.training-calendar-head {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 8px;
+}
+
+.training-calendar-direct-selects {
+  display: grid;
+  grid-template-columns: minmax(76px, 0.8fr) minmax(94px, 1.2fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+.training-calendar-direct-selects select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 0 7px;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 5px;
+  color: #f0f8ff;
+  background: #0b2949;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.training-calendar-direct-selects select:hover,
+.training-calendar-direct-selects select:focus {
+  border-color: rgba(34, 211, 238, 0.7);
+  outline: none;
+}
+
+.training-calendar-head button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(96, 165, 250, 0.24);
+  border-radius: 5px;
+  color: #bfe8ff;
+  background: rgba(12, 39, 68, 0.82);
+  cursor: pointer;
+}
+
+.training-calendar-head button:hover:not(:disabled) {
+  border-color: rgba(34, 211, 238, 0.64);
+  color: #ffffff;
+}
+
+.training-calendar-head button:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+
+.training-calendar-weekdays,
+.training-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.training-calendar-weekdays span {
+  color: #7698b8;
+  font-size: 9px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.training-calendar-days button {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #dceeff;
+  background: rgba(10, 34, 61, 0.72);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.training-calendar-days button:hover:not(:disabled) {
+  border-color: rgba(34, 211, 238, 0.6);
+  background: rgba(10, 85, 118, 0.62);
+}
+
+.training-calendar-days button.today {
+  border-color: rgba(251, 191, 36, 0.72);
+  color: #fde68a;
+}
+
+.training-calendar-days button.selected {
+  border-color: #22d3ee;
+  color: #03111f;
+  background: #22d3ee;
+  font-weight: 900;
+}
+
+.training-calendar-days button:disabled {
+  color: #42617e;
+  background: transparent;
+  cursor: not-allowed;
 }
 
 .qualification-filter-select,
@@ -3610,6 +3774,10 @@ tr:hover td {
   display: none !important;
 }
 
+.qualification-page.international-training-delivery-page > .qualification-table-panel.international-training-trend-panel {
+  display: block !important;
+}
+
 .qualification-table-actions {
   display: flex;
   align-items: center;
@@ -4751,7 +4919,7 @@ tr:hover td {
   z-index: 4;
   display: grid;
   gap: 8px;
-  min-width: 166px;
+  min-width: 226px;
   padding: 12px;
   border: 1px solid rgba(0, 212, 255, 0.26);
   border-radius: 6px;
@@ -4764,7 +4932,7 @@ tr:hover td {
   grid-template-columns: 10px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .global-merged-source-copy {
@@ -4775,7 +4943,8 @@ tr:hover td {
 
 .global-merged-source-copy small {
   color: #8fb3d7;
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -4802,6 +4971,16 @@ tr:hover td {
 .global-merged-ranking-list {
   display: grid;
   gap: 7px;
+}
+
+.global-merged-ranking-list.expanded {
+  max-height: min(620px, 68vh);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.global-merged-ranking-expand {
+  margin-top: 10px;
 }
 
 .global-merged-ranking-list button {
@@ -5185,14 +5364,14 @@ tr:hover td {
 
 .international-training-delivery-filter-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 1.2fr) repeat(4, minmax(140px, 1fr)) max-content;
+  grid-template-columns: minmax(330px, 1.25fr) repeat(4, minmax(140px, 1fr)) max-content;
   gap: 10px;
   align-items: end;
 }
 
 .global-delivery-date-filter-panel {
   display: grid;
-  grid-template-columns: minmax(190px, 0.7fr) minmax(300px, 1fr) max-content;
+  grid-template-columns: minmax(150px, 0.5fr) minmax(360px, 1fr) max-content;
   gap: 14px;
   align-items: end;
   padding: 12px 16px;
@@ -5309,18 +5488,104 @@ tr:hover td {
 }
 
 .international-region-legend {
-  min-width: 390px;
+  min-width: 326px;
+  max-width: 350px;
+  gap: 6px;
+  padding: 9px 10px;
 }
 
 .international-delivery-region-row {
-  grid-template-columns: 12px minmax(120px, 1fr) auto;
+  grid-template-columns: 10px minmax(108px, 0.8fr) minmax(142px, 1.2fr);
+  gap: 6px;
 }
 
 .international-delivery-region-row strong {
   color: #b9d4ee;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.training-delivery-region-legend {
+  min-width: 320px;
+}
+
+.training-delivery-region-legend .training-region-legend-row {
+  grid-template-columns: 10px minmax(88px, 0.8fr) minmax(152px, 1.2fr);
+  gap: 6px;
+}
+
+.training-delivery-region-legend strong {
+  color: #b9d4ee;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.international-distribution-panel {
+  display: grid;
+  min-height: 0;
+  align-content: start;
+}
+
+.international-distribution-head {
+  margin-bottom: 12px;
+}
+
+.international-distribution-head h3 {
+  margin: 5px 0 0;
+  color: #f4f9ff;
+  font-size: 16px;
+}
+
+.international-distribution-list {
+  display: grid;
+  gap: 5px;
+  max-height: 330px;
+  overflow: hidden;
+}
+
+.international-distribution-panel.expanded .international-distribution-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.international-distribution-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px max-content;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(96, 165, 250, 0.1);
+}
+
+.international-distribution-row > span {
+  min-width: 0;
+  color: #d8eaff;
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.international-distribution-row > strong {
+  color: #eaf7ff;
+  font-size: 12px;
+}
+
+.international-distribution-bar {
+  width: 58px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.international-distribution-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: #15d9c5;
 }
 
 @media (max-width: 1500px) {

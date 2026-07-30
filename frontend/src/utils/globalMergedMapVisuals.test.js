@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  GLOBAL_DELIVERY_COMBINED_COLORS,
   buildGlobalPointLegend,
+  isChinaInternationalCombinedPoint,
   resolveGlobalPointColor,
   resolveGlobalPointSymbolSize
 } from './globalMergedMapVisuals.js';
@@ -64,4 +66,16 @@ test('service and delivery legends still fall back to data source', () => {
     { key: 'China', name: 'China', color: '#22d3ee', count: 1 },
     { key: 'International', name: 'International', color: '#a78bfa', count: 2 }
   ]);
+});
+
+test('combined delivery points use a China core and International ring', () => {
+  const point = {
+    source: 'Combined',
+    markerComposition: 'china-international',
+    markerColor: '#22c55e'
+  };
+  assert.equal(isChinaInternationalCombinedPoint(point), true);
+  assert.equal(resolveGlobalPointColor(point), GLOBAL_DELIVERY_COMBINED_COLORS.core);
+  assert.equal(GLOBAL_DELIVERY_COMBINED_COLORS.ring, '#a78bfa');
+  assert.equal(isChinaInternationalCombinedPoint({ source: 'Combined' }), false);
 });

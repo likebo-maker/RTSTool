@@ -7,7 +7,7 @@ import {
   resolveInternationalTrainingDeliveryProductLine,
   resolveInternationalTrainingDeliveryRegion
 } from './internationalTrainingDeliveryConfig';
-import { normalizeTrainingSettlementDate } from './trainingSettlementDate';
+import { normalizeTrainingTime } from './trainingTime';
 
 const REQUIRED_FIELDS = ['batchId', 'courseName', 'rawProductLine', 'secondaryRegion', 'trainingLocation', 'completion'];
 const FIELD_ALIASES = {
@@ -31,7 +31,6 @@ const FIELD_ALIASES = {
   trainingMonth: ['培训月份'],
   startDate: ['培训开始日期'],
   endDate: ['培训结束日期'],
-  settlementDate: ['培训结算时间'],
   startTime: ['培训开始时间'],
   endTime: ['培训结束时间'],
   durationHours: ['课时'],
@@ -112,17 +111,17 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
           continue;
         }
 
-        const settlementDate = normalizeTrainingSettlementDate(values.settlementDate);
-        // A missing settlement date is a data-quality issue, but it does not
-        // discard a delivery record that is otherwise valid. Date-filtered
-        // results exclude it until the source workbook is corrected.
-        if (!settlementDate) {
+        const trainingEndTime = values.endTime || values.endDate;
+        const trainingTime = normalizeTrainingTime(trainingEndTime);
+        // Time is sourced from Training End Time. A missing value remains a
+        // retained data-quality issue; only a date-filtered result excludes it.
+        if (!trainingTime) {
           dirtyRows.push(createDirtyRow(
             dirtyContext,
-            values.settlementDate
-              ? `Settlement Date could not be recognized: ${values.settlementDate}.`
-              : 'Settlement Date is missing.',
-            'International training delivery retained date issue'
+            trainingEndTime
+              ? `Training End Time could not be recognized: ${trainingEndTime}.`
+              : 'Training End Time is missing.',
+            'International training delivery retained Time issue'
           ));
         }
 
@@ -180,7 +179,8 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
           trainingCycle,
           startDate: values.startDate,
           endDate: values.endDate,
-          settlementDate,
+          endTime: values.endTime,
+          trainingTime,
           durationHours: values.durationHours,
           sourceCountry: values.sourceCountry,
           sourceCenter: values.sourceCenter,

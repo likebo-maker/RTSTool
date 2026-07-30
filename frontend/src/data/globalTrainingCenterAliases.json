@@ -25,6 +25,19 @@
         "Mindray Shenzhen",
         "Shenzhen Training Center"
       ]
+    },
+    {
+      "key": "mindray-nanjing-training-center",
+      "displayName": "Nanjing Training Center",
+      "china": [
+        "南京培训中心",
+        "南京培训基地"
+      ],
+      "international": [
+        "TC-MR-Nanjing",
+        "Mindray Nanjing",
+        "Nanjing Training Center"
+      ]
     }
   ]
 }

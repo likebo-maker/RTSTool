@@ -4,6 +4,15 @@ export const GLOBAL_POINT_SOURCE_COLORS = {
   Combined: '#22c55e'
 };
 
+export const GLOBAL_DELIVERY_COMBINED_COLORS = {
+  core: '#22d3ee',
+  ring: '#a78bfa'
+};
+
+export function isChinaInternationalCombinedPoint(point = {}) {
+  return point.markerComposition === 'china-international';
+}
+
 /**
  * Resolves the point color used by the merged world map.
  *
@@ -12,6 +21,9 @@ export const GLOBAL_POINT_SOURCE_COLORS = {
  * type, needs to control the visual encoding.
  */
 export function resolveGlobalPointColor(point = {}) {
+  if (isChinaInternationalCombinedPoint(point)) {
+    return GLOBAL_DELIVERY_COMBINED_COLORS.core;
+  }
   return point.markerColor ||
     GLOBAL_POINT_SOURCE_COLORS[point.source] ||
     GLOBAL_POINT_SOURCE_COLORS.International;

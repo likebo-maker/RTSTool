@@ -21,10 +21,10 @@
       </div>
       <div class="training-region-legend international-region-legend">
         <span class="qualification-map-legend-title">Secondary Region</span>
-        <div v-for="item in regionLegendItems" :key="item.name" class="training-region-legend-row international-delivery-region-row" :class="{ muted: item.attendanceCount === 0 }">
+        <div v-for="item in regionLegendItems" :key="item.name" class="training-region-legend-row international-delivery-region-row" :class="{ muted: item.recordCount === 0 }">
           <span class="training-region-legend-dot" :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"></span>
           <span class="training-region-legend-name">{{ item.name }}</span>
-          <strong>{{ formatNumber(item.sessionCount) }} sessions · {{ formatNumber(item.attendanceCount) }} attendance</strong>
+          <strong>{{ formatNumber(item.recordCount) }} records · {{ formatNumber(item.traineeCount) }} trainees</strong>
         </div>
       </div>
       <div v-if="loading" class="qualification-map-overlay"><LoaderCircle class="spin" :size="24" /><span>Loading delivery map...</span></div>
@@ -90,8 +90,8 @@ const regionLegendItems = computed(() => {
   return legendRegionGroups.value.map((region) => ({
     name: region.name,
     color: region.color,
-    sessionCount: Number(stats.get(region.name)?.sessionCount || 0),
-    attendanceCount: Number(stats.get(region.name)?.attendanceCount || 0)
+    recordCount: Number(stats.get(region.name)?.recordCount || 0),
+    traineeCount: Number(stats.get(region.name)?.traineeCount || 0)
   }));
 });
 

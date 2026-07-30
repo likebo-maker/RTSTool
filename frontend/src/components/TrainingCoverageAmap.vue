@@ -35,20 +35,20 @@
         </div>
       </div>
 
-      <div class="training-region-legend">
-        <span class="qualification-map-legend-title">大区图例</span>
+      <div class="training-region-legend training-delivery-region-legend">
+        <span class="qualification-map-legend-title">大区交付数据</span>
         <div
           v-for="item in regionLegendItems"
           :key="item.name"
           class="training-region-legend-row"
-          :class="{ muted: item.count === 0 }"
+          :class="{ muted: item.recordCount === 0 }"
         >
           <span
             class="training-region-legend-dot"
             :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"
           ></span>
           <span class="training-region-legend-name">{{ item.name }}</span>
-          <strong>{{ item.count }}个</strong>
+          <strong>{{ formatNumber(item.recordCount) }} records · {{ formatNumber(item.traineeCount) }} trainees</strong>
         </div>
       </div>
 
@@ -83,6 +83,10 @@ import {
 
 const props = defineProps({
   points: {
+    type: Array,
+    default: () => []
+  },
+  regionStats: {
     type: Array,
     default: () => []
   },
@@ -169,28 +173,30 @@ const legendConfig = computed(() => {
 });
 
 const regionLegendItems = computed(() => {
-  const regionCounts = new Map();
-  props.points.forEach((point) => {
-    const key = point.mappedRegion || '未匹配大区';
-    regionCounts.set(key, (regionCounts.get(key) || 0) + 1);
-  });
+  const regionStats = new Map((props.regionStats || []).map((item) => [item.name, item]));
 
   const items = getQualificationRegionGroups().map((region) => ({
     name: region.name,
     color: region.color,
-    count: regionCounts.get(region.name) || 0
+    recordCount: Number(regionStats.get(region.name)?.recordCount || 0),
+    traineeCount: Number(regionStats.get(region.name)?.traineeCount || 0)
   }));
 
-  const unmatchedCount = regionCounts.get('未匹配大区') || 0;
-  if (unmatchedCount) {
+  const unmatchedStat = regionStats.get('未匹配大区');
+  if (unmatchedStat?.recordCount) {
     items.push({
       name: '未匹配大区',
       color: '#94a3b8',
-      count: unmatchedCount
+      recordCount: Number(unmatchedStat.recordCount || 0),
+      traineeCount: Number(unmatchedStat.traineeCount || 0)
     });
   }
   return items;
 });
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString('en-US');
+}
 
 const chartRef = ref(null);
 const mapReady = ref(false);

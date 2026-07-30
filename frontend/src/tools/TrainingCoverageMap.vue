@@ -150,9 +150,11 @@
         <TrainingDateRangeFilter
           v-model:start-date="draftFilters.startDate"
           v-model:end-date="draftFilters.endDate"
-          label="培训结算时间"
-          start-label="培训结算开始日期"
-          end-label="培训结算结束日期"
+          label="时间"
+          start-label="开始时间"
+          end-label="结束时间"
+          separator="至"
+          locale="zh-CN"
           :minimum="filterOptions.dateBounds?.minimum"
           :maximum="filterOptions.dateBounds?.maximum"
         />
@@ -199,6 +201,7 @@
           v-model:displayMode="displayMode"
           :active="active"
           :points="dashboard.mapPoints"
+          :region-stats="dashboard.regionStats"
           :loading="loading"
           :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen"
           :selected-branch="fullscreenActive ? focusedCenter : selectedBranch"
@@ -582,7 +585,7 @@ import {
 import { exportBranchTrainingRecords, exportTrainingDirtyRecords, exportTrainingRecords } from '../utils/exportTrainingExcel';
 import { parseTrainingFiles } from '../utils/trainingParser';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
-import { validateTrainingSettlementDateRange } from '../utils/trainingSettlementDate';
+import { validateTrainingTimeRange } from '../utils/trainingTime';
 
 const props = defineProps({
   canExportExcel: {
@@ -1315,12 +1318,12 @@ function validateDraftFilters() {
     importWarnings.value = [constructionReady.value ? '请先导入培训中心交付数据后再查询。' : '请先导入中国区培训中心建设地图数据。'];
     return false;
   }
-  const dateValidation = validateTrainingSettlementDateRange(draftFilters);
+  const dateValidation = validateTrainingTimeRange(draftFilters);
   if (!dateValidation.valid) {
     importWarnings.value = [
       dateValidation.reason === 'reversed'
-        ? '培训结算开始日期不能晚于结束日期。'
-        : '请完整选择培训结算开始日期和结束日期。'
+        ? '开始时间不能晚于结束时间。'
+        : '请完整选择开始时间和结束时间。'
     ];
     return false;
   }

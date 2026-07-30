@@ -2,9 +2,10 @@ import { formatPassRate } from './trainingStatusNormalizer';
 import { resolveTrainingCenterGeo } from './trainingCenterMap';
 import { applyPointOffsets, geoInfoToPoint, resolveGeoFromMap } from '../services/geoCacheService';
 import {
-  filterTrainingRecordsBySettlementDate,
-  resolveTrainingSettlementDateBounds
-} from './trainingSettlementDate';
+  filterTrainingRecordsByTime,
+  resolveTrainingTimeBounds
+} from './trainingTime';
+import { buildTrainingDeliveryRegionStats } from './trainingDeliverySummary';
 
 export const DEFAULT_TRAINING_FILTERS = {
   startDate: '',
@@ -26,7 +27,7 @@ export const TRAINING_DELIVERY_FILTER_KEYS = Object.keys(TRAINING_DELIVERY_FILTE
 
 export function collectTrainingOptions(records) {
   return {
-    dateBounds: resolveTrainingSettlementDateBounds(records),
+    dateBounds: resolveTrainingTimeBounds(records),
     regions: sortTextValues(uniqueValues(records.map((record) => record.mappedRegion)).filter((value) => value !== '未匹配大区')),
     productLines: sortTextValues(uniqueValues(records.map((record) => record.productLine))),
     trainingCenters: sortTextValues(uniqueValues(records.map((record) => record.trainingCenter))),
@@ -35,7 +36,7 @@ export function collectTrainingOptions(records) {
 }
 
 export function applyTrainingFilters(records, filters = DEFAULT_TRAINING_FILTERS) {
-  return filterTrainingRecordsBySettlementDate(records, filters).filter((record) => {
+  return filterTrainingRecordsByTime(records, filters).filter((record) => {
     if (!matchesMultiSelect(record.mappedRegion, filters.regions)) return false;
     if (!matchesMultiSelect(record.productLine, filters.productLines)) return false;
     if (!matchesMultiSelect(record.trainingCenter, filters.trainingCenters)) return false;
@@ -47,7 +48,7 @@ export function applyTrainingFilters(records, filters = DEFAULT_TRAINING_FILTERS
 export function buildTrainingDynamicOptions(records, filters, baseOptions) {
   const selectedSets = buildSelectedFilterSets(filters, baseOptions);
   const buckets = Object.fromEntries(TRAINING_DELIVERY_FILTER_KEYS.map((key) => [key, new Set()]));
-  const dateScopedRecords = filterTrainingRecordsBySettlementDate(records, filters);
+  const dateScopedRecords = filterTrainingRecordsByTime(records, filters);
 
   dateScopedRecords.forEach((record) => {
     TRAINING_DELIVERY_FILTER_KEYS.forEach((targetKey, targetIndex) => {
@@ -132,6 +133,11 @@ export function buildTrainingDashboard(records, filters = DEFAULT_TRAINING_FILTE
     productLineDistribution: aggregateSeries(filteredRecords, 'productLine'),
     courseDistribution: aggregateSeries(filteredRecords, 'courseName'),
     trainingTypeDistribution: aggregateSeries(filteredRecords, 'courseName'),
+    regionStats: buildTrainingDeliveryRegionStats(filteredRecords, {
+      regionField: 'mappedRegion',
+      resolveTraineeKey,
+      fallbackToRecordCountWhenEmpty: true
+    }),
     trendSeries: buildTrainingTrendSeries(filteredRecords),
     previewRows: filteredRecords.slice(0, 500)
   };
