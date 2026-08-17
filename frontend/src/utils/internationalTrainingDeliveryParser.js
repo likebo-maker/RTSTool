@@ -7,7 +7,7 @@ import {
   resolveInternationalTrainingDeliveryProductLine,
   resolveInternationalTrainingDeliveryRegion
 } from './internationalTrainingDeliveryConfig';
-import { normalizeTrainingTime } from './trainingTime';
+import { resolveInternationalTrainingDeliveryTime } from './internationalTrainingDeliveryTime';
 
 const REQUIRED_FIELDS = ['batchId', 'courseName', 'rawProductLine', 'secondaryRegion', 'trainingLocation', 'completion'];
 const FIELD_ALIASES = {
@@ -111,16 +111,16 @@ export async function parseInternationalTrainingDeliveryFiles(fileList, options 
           continue;
         }
 
-        const trainingEndTime = values.endTime || values.endDate;
-        const trainingTime = normalizeTrainingTime(trainingEndTime);
-        // Time is sourced from Training End Time. A missing value remains a
+        const trainingEndDate = values.endDate;
+        const trainingTime = resolveInternationalTrainingDeliveryTime(values);
+        // Time is sourced only from Training End Date. A missing value remains a
         // retained data-quality issue; only a date-filtered result excludes it.
         if (!trainingTime) {
           dirtyRows.push(createDirtyRow(
             dirtyContext,
-            trainingEndTime
-              ? `Training End Time could not be recognized: ${trainingEndTime}.`
-              : 'Training End Time is missing.',
+            trainingEndDate
+              ? `Training End Date could not be recognized: ${trainingEndDate}.`
+              : 'Training End Date is missing.',
             'International training delivery retained Time issue'
           ));
         }

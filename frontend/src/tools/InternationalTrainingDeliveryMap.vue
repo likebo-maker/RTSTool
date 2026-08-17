@@ -424,7 +424,7 @@ function emptyPointDetail() { return { pointStat: null, pointRecords: [], produc
 function formatNumber(value) { return Number(value || 0).toLocaleString('en-US'); }
 function resolveImportWarning() {
   if (records.value.length && !allOptions.value.dateBounds?.minimum) {
-    return 'The latest dataset does not include Training End Time. Re-import the delivery workbook to use Time.';
+    return 'The latest dataset does not include Training End Date. Re-import the delivery workbook to use Time.';
   }
   if (dirtyRows.value.length) {
     return `${dirtyRows.value.length.toLocaleString('en-US')} rows require review. Export Dirty Data to review the original data and reason.`;
