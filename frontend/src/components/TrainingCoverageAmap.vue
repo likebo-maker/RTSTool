@@ -48,9 +48,31 @@
             :style="{ background: item.color, boxShadow: `0 0 10px ${item.color}` }"
           ></span>
           <span class="training-region-legend-name">{{ item.name }}</span>
-          <strong>{{ formatNumber(item.recordCount) }} records · {{ formatNumber(item.traineeCount) }} trainees</strong>
+          <strong>{{ formatChinaTrainingDeliveryLegendText(item) }}</strong>
         </div>
       </div>
+
+      <section
+        v-if="fullscreenActive && activeDetailPoint"
+        class="training-delivery-detail-card"
+        aria-live="polite"
+      >
+        <header class="training-delivery-detail-head">
+          <strong>{{ resolvePointKey(activeDetailPoint) }}</strong>
+          <span>{{ activeDetailPoint.city || '-' }} · {{ activeDetailPoint.mappedRegion || '未匹配大区' }}</span>
+        </header>
+        <div class="training-delivery-detail-metrics">
+          <span><small>培训人数</small><b>{{ formatNumber(activeDetailPoint.traineeCount) }}</b></span>
+          <span><small>培训人次</small><b>{{ formatNumber(activeDetailPoint.recordCount) }}</b></span>
+          <span><small>培训场次</small><b>{{ formatNumber(activeDetailPoint.sessionCount) }}</b></span>
+          <span><small>合格率</small><b>{{ activeDetailPoint.passRate || '-' }}</b></span>
+          <span><small>不合格人次</small><b>{{ formatNumber(activeDetailPoint.failCount) }}</b></span>
+        </div>
+        <div class="training-delivery-detail-lines">
+          <p><span>主要产线</span><b>{{ activeDetailPoint.primaryProductLines || '暂无' }}</b></p>
+          <p><span>主要课程</span><b>{{ activeDetailPoint.primaryCourses || activeDetailPoint.primaryTrainingTypes || '暂无' }}</b></p>
+        </div>
+      </section>
 
       <div v-if="loading" class="qualification-map-overlay">
         <LoaderCircle class="spin" :size="24" />
@@ -73,6 +95,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { LoaderCircle, MapPinned } from 'lucide-vue-next';
 import { getQualificationRegionGroups } from '../utils/branchGeoMap';
 import { resolveTrainingPointTone } from '../utils/trainingAggregator';
+import { formatChinaTrainingDeliveryLegendText } from '../utils/trainingDeliverySummary';
 import {
   buildOfflineChinaMapOption,
   escapeMapHtml,
@@ -194,6 +217,12 @@ const regionLegendItems = computed(() => {
   return items;
 });
 
+const activeDetailPoint = computed(() => {
+  const targetKey = props.focusedBranch || props.selectedBranch;
+  if (!targetKey) return null;
+  return props.points.find((point) => resolvePointKey(point) === targetKey) || null;
+});
+
 function formatNumber(value) {
   return Number(value || 0).toLocaleString('en-US');
 }
@@ -262,6 +291,7 @@ watch(
   () => props.fullscreenActive,
   async () => {
     await nextTick();
+    applyFocus();
     handleResize();
   }
 );
@@ -313,7 +343,7 @@ function handleChartClick(params) {
 function applyFocus() {
   if (!chartInstance) return;
   const targetKey = props.focusedBranch || props.selectedBranch;
-  if (!targetKey) {
+  if (!targetKey || props.fullscreenActive) {
     hideOfflineMapTooltip(chartInstance);
     return;
   }

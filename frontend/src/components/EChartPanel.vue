@@ -83,6 +83,10 @@ const props = defineProps({
   highlightIndex: {
     type: Number,
     default: -1
+  },
+  showHighlightTooltip: {
+    type: Boolean,
+    default: true
   }
 });
 
@@ -183,11 +187,15 @@ function applyHighlight() {
     seriesIndex: 0,
     dataIndex: props.highlightIndex
   });
-  chartInstance.dispatchAction({
-    type: 'showTip',
-    seriesIndex: 0,
-    dataIndex: props.highlightIndex
-  });
+  if (props.showHighlightTooltip) {
+    chartInstance.dispatchAction({
+      type: 'showTip',
+      seriesIndex: 0,
+      dataIndex: props.highlightIndex
+    });
+  } else {
+    chartInstance.dispatchAction({ type: 'hideTip' });
+  }
   previousHighlightIndex = props.highlightIndex;
 }
 </script>

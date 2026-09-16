@@ -36,7 +36,12 @@
         @show-license-center="selectTool('license-center')"
       />
 
-      <main class="main-content" :class="{ 'browser-fullscreen-content': isBrowserFullscreen }">
+      <main
+        ref="fullscreenContentRef"
+        class="main-content"
+        :class="{ 'browser-fullscreen-content': isBrowserFullscreen }"
+      >
+        <div class="fullscreen-fit-stage" :style="fullscreenFitStyle">
         <UnauthorizedState
           v-if="routeBlocked"
           :feature-name="activeToolName"
@@ -122,6 +127,7 @@
           @status-change="handleStatusChange"
           @log="appendLog"
         />
+        </div>
       </main>
 
       <StatusBar
@@ -160,7 +166,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import LoginView from './components/LoginView.vue';
 import LicenseActivationView from './components/LicenseActivationView.vue';
 import SecurityDisclaimerModal from './components/SecurityDisclaimerModal.vue';
@@ -181,6 +187,7 @@ import TrainingCenterMap from './tools/TrainingCenterMap.vue';
 import TimeoutTicketTool from './tools/TimeoutTicketTool.vue';
 import { brandConfig } from './config/brandConfig';
 import { FEATURES, hasFeature, hasToolAccess, isLicenseExpired, toolFeatureLabel } from './utils/licenseFeatures';
+import { calculateFullscreenFitScale } from './utils/fullscreenViewport';
 
 const DISCLAIMER_STORAGE_KEY = 'rts_toolbox_disclaimer_agreed';
 const DISCLAIMER_VERSION = '1.0';
@@ -201,7 +208,16 @@ const licenseStatusInfo = ref({});
 const licenseBootMessage = ref('正在读取本机授权状态...');
 const isBrowserFullscreen = ref(false);
 const fullscreenMessage = ref('');
+const fullscreenContentRef = ref(null);
+const fullscreenFitScale = ref(1);
+const fullscreenFitStyle = computed(() => ({
+  '--fullscreen-fit': String(fullscreenFitScale.value),
+  '--fullscreen-fit-size': `${100 / fullscreenFitScale.value}%`
+}));
 let fullscreenStateMonitor = null;
+let fullscreenFitTaskId = null;
+let fullscreenFitObserver = null;
+let fullscreenFitTimerIds = [];
 const unauthorizedModal = reactive({
   visible: false,
   featureName: ''
@@ -218,11 +234,30 @@ fetchLicenseStatus();
 
 onMounted(() => {
   document.addEventListener('fullscreenchange', handleFullscreenChange);
+  window.addEventListener('resize', scheduleFullscreenFit);
+  window.visualViewport?.addEventListener('resize', scheduleFullscreenFit);
 });
 
 onBeforeUnmount(() => {
   document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  window.removeEventListener('resize', scheduleFullscreenFit);
+  window.visualViewport?.removeEventListener('resize', scheduleFullscreenFit);
+  document.documentElement.classList.remove('browser-fullscreen-active');
+  stopFullscreenFitTracking();
   stopFullscreenStateMonitor();
+});
+
+watch(isBrowserFullscreen, async (isFullscreen) => {
+  document.documentElement.classList.toggle('browser-fullscreen-active', isFullscreen);
+  if (!isFullscreen) {
+    stopFullscreenFitTracking();
+    fullscreenFitScale.value = 1;
+    return;
+  }
+
+  await nextTick();
+  startFullscreenFitTracking();
+  scheduleFullscreenFitSettlements();
 });
 
 watch(
@@ -453,6 +488,87 @@ function syncBrowserFullscreenState() {
     stopFullscreenStateMonitor();
   }
   return fullscreenActive;
+}
+
+function scheduleFullscreenFit() {
+  if (fullscreenFitTaskId !== null) return;
+  fullscreenFitTaskId = window.setTimeout(() => {
+    fullscreenFitTaskId = null;
+    syncFullscreenFit();
+  }, 0);
+}
+
+function scheduleFullscreenFitSettlements() {
+  clearFullscreenFitTimers();
+  scheduleFullscreenFit();
+  fullscreenFitTimerIds = [120, 360, 720, 1200, 2000].map((delay) => window.setTimeout(
+    scheduleFullscreenFit,
+    delay
+  ));
+}
+
+function startFullscreenFitTracking() {
+  stopFullscreenFitObserver();
+  if (typeof window.ResizeObserver !== 'function' || !fullscreenContentRef.value) return;
+  fullscreenFitObserver = new window.ResizeObserver(scheduleFullscreenFit);
+  fullscreenFitObserver.observe(fullscreenContentRef.value);
+}
+
+function stopFullscreenFitTracking() {
+  stopFullscreenFitObserver();
+  clearFullscreenFitTimers();
+  if (fullscreenFitTaskId !== null) {
+    window.clearTimeout(fullscreenFitTaskId);
+    fullscreenFitTaskId = null;
+  }
+}
+
+function stopFullscreenFitObserver() {
+  fullscreenFitObserver?.disconnect();
+  fullscreenFitObserver = null;
+}
+
+function clearFullscreenFitTimers() {
+  fullscreenFitTimerIds.forEach((timerId) => window.clearTimeout(timerId));
+  fullscreenFitTimerIds = [];
+}
+
+function syncFullscreenFit() {
+  if (!isBrowserFullscreen.value) {
+    fullscreenFitScale.value = 1;
+    return;
+  }
+
+  const content = fullscreenContentRef.value;
+  const styles = content ? window.getComputedStyle(content) : null;
+  const horizontalPadding = styles
+    ? Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight)
+    : 28;
+  const verticalPadding = styles
+    ? Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom)
+    : 28;
+  const visualViewport = window.visualViewport;
+  const widthCandidates = [
+    content?.clientWidth ? content.clientWidth - horizontalPadding : 0,
+    visualViewport?.width ? visualViewport.width - horizontalPadding : 0,
+    window.innerWidth - horizontalPadding
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  const heightCandidates = [
+    content?.clientHeight ? content.clientHeight - verticalPadding : 0,
+    visualViewport?.height ? visualViewport.height - verticalPadding : 0,
+    window.innerHeight - verticalPadding
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  const width = Math.max(0, (widthCandidates.length ? Math.min(...widthCandidates) : 0) - 2);
+  const height = Math.max(0, (heightCandidates.length ? Math.min(...heightCandidates) : 0) - 2);
+  const scale = calculateFullscreenFitScale({ width, height });
+
+  if (Math.abs(fullscreenFitScale.value - scale) < 0.0001) return;
+  fullscreenFitScale.value = scale;
+  void nextTick().then(() => {
+    // ECharts must recalculate after the transformed workspace receives its
+    // new logical dimensions.
+    window.dispatchEvent(new Event('resize'));
+  });
 }
 
 function waitForFullscreenStateSettlement() {

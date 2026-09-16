@@ -203,7 +203,7 @@
           :points="dashboard.mapPoints"
           :region-stats="dashboard.regionStats"
           :loading="loading"
-          :fullscreen-active="fullscreenActive && !fullscreenFiltersOpen"
+          :fullscreen-active="fullscreenActive"
           :selected-branch="fullscreenActive ? focusedCenter : selectedBranch"
           :presentation-mode="fullscreenActive && presentationCarouselEnabled"
           :focused-branch="focusedCenter"
@@ -212,6 +212,24 @@
           :empty-text="emptyStateText"
           @select-center="handleTrainingCenterSelect"
         />
+        <section
+          v-if="activeDistributionDetail"
+          class="training-delivery-detail-card training-distribution-detail-card"
+          aria-live="polite"
+        >
+          <header class="training-distribution-detail-head">
+            <div>
+              <span>{{ activeDistributionDetail.kicker }}</span>
+              <strong>{{ activeDistributionDetail.name }}</strong>
+            </div>
+            <b>TOP {{ activeDistributionDetail.rank }}</b>
+          </header>
+          <div class="training-distribution-detail-value">
+            <span>{{ activeDistributionDetail.label }}</span>
+            <strong>{{ activeDistributionDetail.value.toLocaleString('zh-CN') }}</strong>
+            <small>培训人次</small>
+          </div>
+        </section>
       </div>
 
       <aside class="qualification-side-panel">
@@ -246,7 +264,7 @@
                   <button
                     v-for="(item, index) in displayedTopBranches"
                     :key="item.branch"
-                    class="qualification-rank-row"
+                    class="qualification-rank-row training-delivery-rank-row"
                     :class="{ focused: activeSideTab === 'branch' && index === sideAnalysisIndex }"
                     :data-branch="item.branch"
                     type="button"
@@ -281,7 +299,7 @@
                   <button
                     v-for="(item, index) in displayedFailRateBranches"
                     :key="`${item.branch}-fail-rate`"
-                    class="qualification-risk-row"
+                    class="qualification-risk-row training-delivery-rank-row"
                     :class="{ focused: activeSideTab === 'failRate' && index === sideAnalysisIndex }"
                     :data-branch="item.branch"
                     type="button"
@@ -316,7 +334,7 @@
                   <button
                     v-for="(item, index) in displayedFailCountBranches"
                     :key="`${item.branch}-fail-count`"
-                    class="qualification-risk-row"
+                    class="qualification-risk-row training-delivery-rank-row"
                     :class="{ focused: activeSideTab === 'failCount' && index === sideAnalysisIndex }"
                     :data-branch="item.branch"
                     type="button"
@@ -350,6 +368,7 @@
                   :loading="loading"
                   :height="productLineChartHeight"
                   :highlight-index="activeSideTab === 'product' ? sideChartHighlightIndex : -1"
+                  :show-highlight-tooltip="false"
                   :empty-text="'暂无产线分布数据'"
                   panelless
                 />
@@ -370,6 +389,7 @@
                   :loading="loading"
                   :height="trainingTypeChartHeight"
                   :highlight-index="activeSideTab === 'type' ? sideChartHighlightIndex : -1"
+                  :show-highlight-tooltip="false"
                   :empty-text="'暂无课程分布数据'"
                   panelless
                 />
@@ -585,6 +605,11 @@ import {
 import { exportBranchTrainingRecords, exportTrainingDirtyRecords, exportTrainingRecords } from '../utils/exportTrainingExcel';
 import { parseTrainingFiles } from '../utils/trainingParser';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
+import {
+  findTrainingDeliveryBranchIndex,
+  resolveTrainingDeliveryDistributionFocus,
+  resolveTrainingDeliveryFocusBranch
+} from '../utils/trainingDeliverySummary';
 import { validateTrainingTimeRange } from '../utils/trainingTime';
 
 const props = defineProps({
@@ -615,7 +640,6 @@ const emit = defineEmits(['status-change', 'log', 'feature-blocked', 'enter-full
 const TOP_LIST_LIMIT = 10;
 const CHART_TOP_LIMIT = 10;
 const DELIVERY_DATASET_VERSION = 'training-delivery-v3';
-const MAP_CAROUSEL_INTERVAL_MS = 5000;
 const SIDE_ITEM_INTERVAL_MS = 4000;
 const AUTO_RESUME_DELAY_MS = 30000;
 const FILTER_LABELS = {
@@ -661,7 +685,6 @@ const exportFeedback = reactive({
   title: '',
   message: ''
 });
-let mapCarouselTimerId = null;
 let sideAnalysisTimerId = null;
 let autoResumeTimerId = null;
 let fullscreenControlsHideTimerId = null;
@@ -767,8 +790,11 @@ const activeSideRows = computed(() => {
   return [];
 });
 const activeSideBranch = computed(() => {
-  if (!['branch', 'failRate', 'failCount'].includes(activeSideTab.value)) return '';
-  return activeSideRows.value[sideAnalysisIndex.value]?.branch || '';
+  return resolveTrainingDeliveryFocusBranch(
+    activeSideTab.value,
+    activeSideRows.value,
+    sideAnalysisIndex.value
+  );
 });
 const sideChartHighlightIndex = computed(() => {
   if (!['product', 'type'].includes(activeSideTab.value)) return -1;
@@ -776,24 +802,13 @@ const sideChartHighlightIndex = computed(() => {
   if (!rowCount || sideAnalysisIndex.value < 0 || sideAnalysisIndex.value >= rowCount) return -1;
   return rowCount - 1 - sideAnalysisIndex.value;
 });
-const carouselSequence = computed(() => {
-  const mapPointByCenter = new Map(dashboard.value.mapPoints.map((point) => [resolveTrainingPointKey(point), point]));
-  const addUniquePoints = (target, items) => {
-    items.forEach((item) => {
-      const point = mapPointByCenter.get(resolveTrainingPointKey(item));
-      if (point && !target.some((candidate) => resolveTrainingPointKey(candidate) === resolveTrainingPointKey(point))) {
-        target.push(point);
-      }
-    });
-  };
-
-  const result = [];
-  addUniquePoints(result, [...dashboard.value.mapPoints].sort(compareTrainingCountPoint).slice(0, 10));
-  addUniquePoints(result, [...dashboard.value.mapPoints].filter(isTrainingRiskPoint).sort(compareTrainingRiskPoint).slice(0, 10));
-  addUniquePoints(result, dashboard.value.mapPoints);
-  return result;
-});
-
+const activeDistributionDetail = computed(() => (
+  resolveTrainingDeliveryDistributionFocus(
+    activeSideTab.value,
+    activeSideRows.value,
+    sideAnalysisIndex.value
+  )
+));
 watchEffect(() => {
   if (!props.active) return;
   if (!props.fullscreenActive && fullscreenFiltersOpen.value) {
@@ -826,7 +841,6 @@ watch(
       carouselLocked.value = false;
       activeSideTab.value = 'branch';
       sideAnalysisIndex.value = 0;
-      focusFirstCarouselPoint();
       startAutoAnalysisTimers();
       return;
     }
@@ -844,13 +858,10 @@ watch(
 );
 
 watch(
-  () => carouselSequence.value.map((point) => resolveTrainingPointKey(point)).join('|'),
-  () => {
-    if (!props.fullscreenActive || !presentationCarouselEnabled.value) return;
-    if (!carouselSequence.value.some((point) => resolveTrainingPointKey(point) === focusedCenter.value)) {
-      focusFirstCarouselPoint();
-    }
-    startAutoAnalysisTimers();
+  [() => props.fullscreenActive, activeSideTab, activeSideBranch],
+  ([isFullscreen, , branch]) => {
+    if (!isFullscreen) return;
+    focusedCenter.value = branch;
   }
 );
 
@@ -990,27 +1001,18 @@ function handleTrainingCenterSelect(trainingCenter) {
 
 function focusCenterManually(trainingCenter, options = {}) {
   if (!trainingCenter) return;
+  const rows = options.preserveSideTab ? activeSideRows.value : displayedTopBranches.value;
+  if (!options.preserveSideTab) {
+    activeSideTab.value = 'branch';
+  }
+  const matchingIndex = findTrainingDeliveryBranchIndex(rows, trainingCenter);
+  if (matchingIndex >= 0) {
+    sideAnalysisIndex.value = matchingIndex;
+  }
   focusedCenter.value = trainingCenter;
   if (options.pause) {
     pauseAutoAnalysisForInteraction();
   }
-}
-
-function focusFirstCarouselPoint() {
-  const firstPoint = carouselSequence.value[0];
-  focusedCenter.value = firstPoint ? resolveTrainingPointKey(firstPoint) : '';
-}
-
-function advanceCarouselFocus() {
-  if (!presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
-  const sequence = carouselSequence.value;
-  if (!sequence.length) {
-    focusedCenter.value = '';
-    return;
-  }
-  const currentIndex = sequence.findIndex((point) => resolveTrainingPointKey(point) === focusedCenter.value);
-  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % sequence.length;
-  focusedCenter.value = resolveTrainingPointKey(sequence[nextIndex]);
 }
 
 function advanceSideAnalysisTab() {
@@ -1038,15 +1040,10 @@ function startAutoAnalysisTimers() {
   stopAutoAnalysisTimers();
   clearAutoResumeTimer();
   if (!props.fullscreenActive || !presentationCarouselEnabled.value || carouselPaused.value || carouselLocked.value) return;
-  mapCarouselTimerId = window.setInterval(advanceCarouselFocus, MAP_CAROUSEL_INTERVAL_MS);
   sideAnalysisTimerId = window.setInterval(advanceSideAnalysisItem, SIDE_ITEM_INTERVAL_MS);
 }
 
 function stopAutoAnalysisTimers() {
-  if (mapCarouselTimerId) {
-    window.clearInterval(mapCarouselTimerId);
-    mapCarouselTimerId = null;
-  }
   if (sideAnalysisTimerId) {
     window.clearInterval(sideAnalysisTimerId);
     sideAnalysisTimerId = null;
@@ -1063,7 +1060,7 @@ function scrollActiveSideRowIntoView() {
   if (!props.fullscreenActive || !activeSideBranch.value || !pageRef.value) return;
   const selector = `.qualification-rank-row.focused[data-branch="${cssEscape(activeSideBranch.value)}"], .qualification-risk-row.focused[data-branch="${cssEscape(activeSideBranch.value)}"]`;
   const row = pageRef.value.querySelector(selector);
-  row?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  row?.scrollIntoView?.({ block: 'nearest' });
 }
 
 function cssEscape(value) {
@@ -1168,7 +1165,7 @@ function selectSideTab(tabKey) {
 }
 
 function resetSideAnalysisIndex(tabKey) {
-  sideAnalysisIndex.value = ['product', 'type'].includes(tabKey) ? -1 : 0;
+  sideAnalysisIndex.value = 0;
 }
 
 function toggleSidePanel(panelKey) {
@@ -1217,7 +1214,7 @@ async function exportCurrentResult() {
 
 function openBranchDetail(branch) {
   if (props.fullscreenActive) {
-    pauseAutoAnalysisForInteraction();
+    focusCenterManually(branch, { pause: true, preserveSideTab: true });
     return;
   }
   selectedBranch.value = branch;
@@ -1261,23 +1258,6 @@ function statusClass(status) {
   return 'warning';
 }
 
-function resolveTrainingPointKey(point) {
-  return point?.trainingCenter || point?.branch || '';
-}
-
-function isTrainingRiskPoint(point) {
-  if (!point) return false;
-  if (Number(point.failCount || 0) > 0) return true;
-  if (point.hasEffectiveResult && Number(point.passRateValue ?? 100) < 70) return true;
-  return false;
-}
-
-function compareTrainingCountPoint(left, right) {
-  return Number(right.recordCount || 0) - Number(left.recordCount || 0)
-    || Number(right.traineeCount || 0) - Number(left.traineeCount || 0)
-    || resolveTrainingPointKey(left).localeCompare(resolveTrainingPointKey(right), 'zh-CN');
-}
-
 async function exportDirtyData() {
   if (!props.canExportExcel) {
     emit('feature-blocked', 'Excel导出');
@@ -1293,12 +1273,6 @@ async function exportDirtyData() {
       emit('log', `已导出培训中心交付脏数据，共 ${dirtyRows.value.length} 条`);
     }
   );
-}
-
-function compareTrainingRiskPoint(left, right) {
-  return Number(right.failCount || 0) - Number(left.failCount || 0)
-    || Number(left.passRateValue ?? 100) - Number(right.passRateValue ?? 100)
-    || resolveTrainingPointKey(left).localeCompare(resolveTrainingPointKey(right), 'zh-CN');
 }
 
 function createDefaultFilters() {
@@ -1368,6 +1342,13 @@ function buildTopBarOption(seriesData, seriesName, expanded = false) {
     grid: { left: 8, right: 14, top: 8, bottom: 8, containLabel: true },
     tooltip: {
       trigger: 'axis',
+      confine: true,
+      backgroundColor: 'rgba(5, 17, 35, 0.96)',
+      borderColor: 'rgba(0, 212, 255, 0.46)',
+      borderWidth: 1,
+      padding: [8, 10],
+      textStyle: { color: '#dcecff', fontSize: 12 },
+      extraCssText: 'max-width:420px;white-space:normal;overflow-wrap:anywhere;box-shadow:0 12px 28px rgba(0,0,0,.38);',
       axisPointer: { type: 'shadow' },
       formatter: (params) => {
         const current = params?.[0];

@@ -82,7 +82,10 @@ export function buildOfflineChinaMapOption({
     geo: {
       map: OFFLINE_CHINA_MAP_NAME,
       roam: true,
-      zoom: 1.18,
+      // Keep the full China outline inside the map viewport at both laptop
+      // fullscreen and large-screen resolutions. Users can still zoom with
+      // the map's native roam controls when they need a closer view.
+      zoom: 1,
       center: [104.195397, 35.86166],
       scaleLimit: { min: 0.9, max: 8 },
       layoutCenter: ['50%', '52%'],

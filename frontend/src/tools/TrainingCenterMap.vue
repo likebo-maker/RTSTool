@@ -3,6 +3,7 @@
     class="tool-page qualification-page training-center-map-page"
     :class="{
       'fullscreen-workspace': fullscreenActive,
+      'fullscreen-host': fullscreenActive,
       'global-merged-fullscreen-workspace': fullscreenActive && isGlobalScopeActive
     }"
   >

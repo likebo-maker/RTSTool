@@ -3,10 +3,11 @@
     class="tool-page qualification-page engineer-qualification-map-page"
     :class="{
       'fullscreen-workspace': fullscreenActive,
+      'fullscreen-host': fullscreenActive,
       'global-merged-fullscreen-workspace': fullscreenActive && activeTab === 'global'
     }"
   >
-    <section v-if="!fullscreenActive" class="glass-panel training-center-tab-panel">
+    <section v-if="!fullscreenActive" class="glass-panel training-center-tab-panel engineer-qualification-tab-panel">
       <div>
         <p class="section-kicker">Engineer Qualification Map</p>
         <h2>Engineer Service Qualification Map</h2>
@@ -18,10 +19,11 @@
           class="training-center-tab-button"
           :class="{ active: activeTab === tab.key }"
           type="button"
+          :aria-label="tab.label"
           @click="switchTab(tab.key)"
         >
           <component :is="tab.icon" :size="16" />
-          <span>{{ tab.label }}</span>
+          <span>{{ tab.shortLabel }}</span>
         </button>
       </div>
     </section>
@@ -159,9 +161,9 @@ const serviceDataSources = computed(() => [
 ]);
 
 const tabs = [
-  { key: 'global', label: 'Global Service Qualification Map', icon: Globe2 },
-  { key: 'china', label: 'China Service Qualification Map', icon: MapPinned },
-  { key: 'international', label: 'International Service Qualification Map', icon: UsersRound }
+  { key: 'global', shortLabel: 'Global', label: 'Global Service Qualification Map', icon: Globe2 },
+  { key: 'china', shortLabel: 'China', label: 'China Service Qualification Map', icon: MapPinned },
+  { key: 'international', shortLabel: 'International', label: 'International Service Qualification Map', icon: UsersRound }
 ];
 
 watch(
