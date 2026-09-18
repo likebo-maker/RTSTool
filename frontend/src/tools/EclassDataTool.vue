@@ -13,7 +13,7 @@
           <p class="section-kicker">Processing Scope</p>
           <h2>产线与业务方向</h2>
         </div>
-        <span class="format-chip">{{ schema.enabled ? '可处理' : '待开发' }}</span>
+        <span class="format-chip">{{ schemaStatusLabel }}</span>
       </div>
 
       <div class="eclass-choice-layout">
@@ -48,14 +48,14 @@
               @click="selectModule(moduleItem.key)"
             >
               <span>{{ moduleItem.label }}</span>
-              <small>{{ isCombinationEnabled(productLine, moduleItem.key) ? '可运行' : '待开发' }}</small>
+              <small>{{ combinationStatusLabel(productLine, moduleItem.key) }}</small>
             </button>
           </div>
         </div>
       </div>
 
-      <div class="result-band" :class="schema.enabled ? 'success' : 'idle'">
-        <CircleCheck v-if="schema.enabled" :size="21" />
+      <div class="result-band" :class="isSchemaVisible ? 'success' : 'idle'">
+        <CircleCheck v-if="isSchemaVisible" :size="21" />
         <Clock3 v-else :size="21" />
         <span>{{ schema.description || schema.message || '当前组合暂未接入底层逻辑' }}</span>
       </div>
@@ -70,7 +70,7 @@
         <span class="format-chip">xlsx / docx</span>
       </div>
 
-      <template v-if="schema.enabled">
+      <template v-if="isSchemaVisible">
         <div class="upload-grid eclass-upload-grid">
           <DirectoryUploadCard
             v-for="slot in folderUploadSlots"
@@ -254,6 +254,11 @@ import {
   updateProcessTask
 } from '../services/processTaskStore';
 import { runWithMinimumVisibleTime } from '../utils/blockingOperation';
+import {
+  adaptEclassOptionsForUi,
+  buildUiOnlyEclassSchema,
+  isUiOnlyEclassProductLine
+} from '../utils/eclassUiConfig';
 
 const props = defineProps({
   canExportExcel: {
@@ -267,8 +272,8 @@ const emit = defineEmits(['status-change', 'log', 'feature-blocked']);
 const fallbackOptions = {
   product_lines: [
     { key: 'IVD', label: 'IVD', enabled: true },
-    { key: 'PLMS', label: 'PLMS', enabled: false, message: '待开发' },
-    { key: 'MIS', label: 'MIS', enabled: false, message: '待开发' }
+    { key: 'PLMS', label: 'PLMS', enabled: true, ui_only: true },
+    { key: 'MIS', label: 'MIS', enabled: true, ui_only: true }
   ],
   modules: [
     { key: 'big_teach', label: '大练兵' },
@@ -282,7 +287,7 @@ const fallbackOptions = {
 
 const initialCombinationState = getEclassCombinationState(eclassPageState.productLine, eclassPageState.moduleKey);
 const restoredFromMemory = Boolean(initialCombinationState);
-const options = ref(eclassPageState.options || fallbackOptions);
+const options = ref(adaptEclassOptionsForUi(eclassPageState.options || fallbackOptions));
 const productLine = ref(eclassPageState.productLine || 'IVD');
 const moduleKey = ref(eclassPageState.moduleKey || 'big_teach');
 const schema = ref(initialCombinationState?.schema || defaultEclassSchema);
@@ -313,6 +318,12 @@ const fileUploadSlots = computed(() => (
   (schema.value.upload_slots || []).filter((slot) => slot.input_type !== 'folder')
 ));
 
+const isSchemaVisible = computed(() => schema.value.enabled || schema.value.ui_only);
+const schemaStatusLabel = computed(() => {
+  if (schema.value.ui_only) return '已接入';
+  return schema.value.enabled ? '可处理' : '待开发';
+});
+
 const missingRequiredSlots = computed(() => {
   if (!schema.value.enabled) return schema.value.upload_slots || [];
   return (schema.value.upload_slots || []).filter((slot) => slot.required && !slotFiles(slot.key).length);
@@ -320,12 +331,14 @@ const missingRequiredSlots = computed(() => {
 
 const canProcess = computed(() => (
   schema.value.enabled &&
+  schema.value.process_enabled !== false &&
   !isProcessing.value &&
   missingRequiredSlots.value.length === 0
 ));
 
 const statusText = computed(() => {
   if (isProcessing.value) return '正在处理 E课堂数据';
+  if (schema.value.ui_only) return '界面已接入';
   if (!schema.value.enabled) return '待开发';
   if (openFolderUrl.value) return '处理完成，可打开输出文件夹';
   if (missingRequiredSlots.value.length) return `待上传 ${missingRequiredSlots.value.length} 个必传项目`;
@@ -379,7 +392,10 @@ watchEffect(() => {
 
 onMounted(async () => {
   await loadOptions();
-  if (!restoredFromMemory) {
+  if (
+    !restoredFromMemory ||
+    (isUiOnlyEclassProductLine(productLine.value) && !schema.value.ui_only)
+  ) {
     await loadSchema();
   }
 });
@@ -394,10 +410,16 @@ function isCombinationEnabled(line, moduleName) {
   ));
 }
 
+function combinationStatusLabel(line, moduleName) {
+  if (isUiOnlyEclassProductLine(line)) return '已接入';
+  return isCombinationEnabled(line, moduleName) ? '可运行' : '待开发';
+}
+
 async function loadOptions() {
   try {
-    options.value = await getEclassOptions();
+    options.value = adaptEclassOptionsForUi(await getEclassOptions());
   } catch (error) {
+    options.value = adaptEclassOptionsForUi(fallbackOptions);
     emit('log', error.message || 'E课堂配置读取失败，使用本地默认配置');
   }
 }
@@ -406,9 +428,14 @@ async function loadSchema() {
   resetResult();
   clearAllSlots();
   try {
-    schema.value = await getEclassUploadSchema(productLine.value, moduleKey.value);
+    if (isUiOnlyEclassProductLine(productLine.value)) {
+      const referenceSchema = await getEclassUploadSchema('IVD', moduleKey.value);
+      schema.value = buildUiOnlyEclassSchema(productLine.value, moduleKey.value, referenceSchema);
+    } else {
+      schema.value = await getEclassUploadSchema(productLine.value, moduleKey.value);
+    }
     resultMessage.value = schema.value.enabled
-      ? '等待上传文件'
+      ? schema.value.ui_only ? '界面已接入' : '等待上传文件'
       : schema.value.message || '当前组合待开发';
   } catch (error) {
     schema.value = {
@@ -445,7 +472,7 @@ function restoreCombinationState(state) {
   applyInputVersionsState(state?.inputVersions || {});
   progress.value = state?.progress || 0;
   resultState.value = state?.resultState || 'idle';
-  resultMessage.value = state?.resultMessage || (schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发');
+  resultMessage.value = state?.resultMessage || defaultResultMessage();
   preview.value = state?.preview || null;
   outputs.value = state?.outputs || [];
   outputFolder.value = state?.outputFolder || '';
@@ -466,7 +493,10 @@ async function switchCombination(nextProductLine, nextModuleKey) {
   eclassPageState.moduleKey = normalizedModuleKey;
 
   const savedState = getEclassCombinationState(normalizedProductLine, normalizedModuleKey);
-  if (savedState) {
+  if (
+    savedState &&
+    (!isUiOnlyEclassProductLine(normalizedProductLine) || savedState.schema?.ui_only)
+  ) {
     restoreCombinationState(savedState);
     return;
   }
@@ -554,7 +584,7 @@ function applyProcessTaskState(task) {
   }
   progress.value = task.progress || 0;
   resultState.value = task.resultState || 'idle';
-  resultMessage.value = task.message || (schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发');
+  resultMessage.value = task.message || defaultResultMessage();
   preview.value = task.preview || null;
   outputs.value = task.outputs || [];
   outputFolder.value = task.outputFolder || '';
@@ -563,15 +593,20 @@ function applyProcessTaskState(task) {
 
 function resetResult() {
   resetProcessTask(currentEclassTaskKey(), {
-    message: schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发'
+    message: defaultResultMessage()
   });
   progress.value = 0;
   resultState.value = 'idle';
-  resultMessage.value = schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发';
+  resultMessage.value = defaultResultMessage();
   preview.value = null;
   outputs.value = [];
   outputFolder.value = '';
   openFolderUrl.value = '';
+}
+
+function defaultResultMessage() {
+  if (schema.value.ui_only) return '界面已接入，当前仅展示操作界面';
+  return schema.value.enabled ? '等待执行处理' : schema.value.message || '当前组合待开发';
 }
 
 function saveMemoryState() {
